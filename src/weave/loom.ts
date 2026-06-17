@@ -45,6 +45,7 @@ import { hasContrastCue, threadKind } from './connections';
 import { DEPTH_LABEL, depthRung } from './depth';
 import type { DepthRung } from './depth';
 import { buildCheck, mentionsAnswer } from './checks';
+import { isAdjectiveHeaded } from './terms';
 import type { TypeBandit } from './bandit';
 import type { Opening } from '../types';
 import { DEFAULT_WEIGHTS } from './weights';
@@ -280,6 +281,10 @@ export class Loom {
         const b = exposed[j];
         if (this.checkpointed.has([a.id, b.id].sort().join('|'))) continue;
         if (trivialPair(a, b)) continue;
+        // Both threads must read as noun phrases for the prompt to be grammatical
+        // ("the link between {a} and {b}"). An adjective-headed label slipping
+        // through `important` would make a nonsensical question -- skip the pair.
+        if (isAdjectiveHeaded(a.label) || isAdjectiveHeaded(b.label)) continue;
         const together = a.passageIds.filter(
           (pid) => b.passageIds.includes(pid) && this.emitted.has(pid),
         ).length;

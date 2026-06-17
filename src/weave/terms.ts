@@ -79,6 +79,76 @@ function isGenericUnigram(key: string, isBigram: boolean): boolean {
   return !isBigram && GENERIC.has(key);
 }
 
+// -- Part-of-speech: keep a checkpoint question grammatical. A thread used in
+// "the link between {a} and {b}" or "what would {b} look like without {a}" must
+// read as a NOUN PHRASE. A bare adjective ("ancient", "medieval") slipping in as
+// a standalone concept makes the question nonsensical -- "the link between
+// ancient and schools" pairs an adjective with a noun. We detect adjective-
+// HEADED labels deterministically (a curated lexicon + a few high-precision
+// suffixes) the same way STOP/GENERIC work, no model or NLP dependency. A label
+// is fine as long as its HEAD (last word) is nominal: "ancient schools" weaves,
+// the naked "ancient" never does.
+const ADJECTIVES = new Set(
+  (
+    // time / period
+    'ancient medieval mediaeval prehistoric archaic classical contemporary modern premodern colonial ' +
+    'imperial feudal victorian byzantine ottoman roman greek persian ' +
+    // domain qualifiers (recur constantly in encyclopedic prose, never threads alone)
+    'political social economic economical cultural religious secular spiritual military naval civil ' +
+    'national international transnational global worldwide regional municipal provincial federal ' +
+    'eastern western northern southern rural urban suburban foreign domestic indigenous ethnic racial ' +
+    'tribal linguistic legal illegal constitutional judicial legislative administrative bureaucratic ' +
+    'financial commercial industrial agricultural agrarian scientific academic intellectual ' +
+    'philosophical literary artistic aesthetic poetic dramatic moral ethical formal informal official ' +
+    'physical chemical biological mathematical statistical theoretical practical technical mechanical ' +
+    'electrical digital natural artificial organic synthetic public private personal collective communal ' +
+    'medical surgical clinical genetic molecular atomic nuclear thermal optical acoustic ' +
+    // size / degree / pace
+    'vast huge tiny immense massive gigantic enormous minute miniature rapid gradual sudden immediate ' +
+    'temporary permanent perpetual eternal mutual reciprocal primary secondary tertiary ultimate ' +
+    'significant substantial considerable notable remarkable prominent dominant prevalent widespread ' +
+    'ubiquitous essential fundamental crucial vital pivotal paramount inherent intrinsic implicit ' +
+    'explicit apparent evident obvious distinct separate unique peculiar complicated intricate elaborate ' +
+    'sophisticated advanced primitive efficient productive robust durable fragile stable unstable ' +
+    'volatile flexible rigid elastic accurate precise correct incorrect valid invalid reliable ' +
+    'consistent coherent relevant irrelevant appropriate suitable adequate sufficient insufficient ' +
+    'beneficial harmful dangerous hazardous toxic lethal fatal deadly visible invisible transparent ' +
+    'opaque vertical horizontal diagonal parallel perpendicular circular spherical cylindrical ' +
+    // colour / sensory / plain descriptive
+    'ancient pale bright dark vivid dull smooth rough sharp blunt heavy gentle violent silent loud ' +
+    'wealthy poor noble humble sacred profane holy divine mortal'
+  ).split(/\s+/),
+);
+
+// Words ending in an "adjectival" suffix that are nevertheless nouns -- the
+// suffix test must not suppress them.
+const ADJ_SUFFIX_NOUN_EXCEPTIONS = new Set(
+  'handful mouthful spoonful armful house chorus census campus virus bonus genus focus consensus'.split(
+    /\s+/,
+  ),
+);
+
+/** Does this single word read as an adjective (so it can't head a noun phrase)? */
+function isAdjectivalWord(word: string): boolean {
+  if (ADJECTIVES.has(word)) return true;
+  if (word.length <= 4 || ADJ_SUFFIX_NOUN_EXCEPTIONS.has(word)) return false;
+  // High-precision suffixes: -ous (numerous, dangerous), -ful (useful), -less
+  // (endless). Deliberately conservative -- -ic/-ive/-al/-ary have too many noun
+  // homographs (logic, motive, ritual, summary), so those rely on the lexicon.
+  return /(ous|ful|less)$/.test(word);
+}
+
+/**
+ * Is the label adjective-HEADED -- i.e. its last word is an adjective, so it
+ * cannot stand as a noun phrase in a checkpoint question? "ancient" and
+ * "purely theoretical" fail; "ancient schools" and "schools" pass (noun head).
+ */
+export function isAdjectiveHeaded(label: string): boolean {
+  const words = label.toLowerCase().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return true;
+  return isAdjectivalWord(words[words.length - 1]);
+}
+
 function tokenize(text: string): string[] {
   return stripUrls(text)
     .toLowerCase()
@@ -144,8 +214,11 @@ export function extractConcepts(passages: Passage[], query: string, max = 24): C
     if (df < minDf) continue;
     if (df > Math.max(4, n * 0.6)) continue; // ubiquitous = not discriminating
     // Multi-word terms are the most specific; generic single words are demoted
-    // hard so meaningful threads win the limited concept slots.
-    const score = df * (c.isBigram ? 2.1 : 1) * (isGenericUnigram(key, c.isBigram) ? 0.3 : 1);
+    // hard so meaningful threads win the limited concept slots. An adjective-
+    // headed label is demoted the same way -- it can still surface as a chip but
+    // should not win a slot over a real noun-phrase thread.
+    const demoted = isGenericUnigram(key, c.isBigram) || isAdjectiveHeaded(key);
+    const score = df * (c.isBigram ? 2.1 : 1) * (demoted ? 0.3 : 1);
     scored.push({ key, c, score });
   }
   scored.sort((a, b) => b.score - a.score);
@@ -194,9 +267,13 @@ export function extractConcepts(passages: Passage[], query: string, max = 24): C
     const df = c.passages.size;
     // Meaningful enough to anchor a reference card, a check, or a checkpoint:
     // a specific multi-word term, or a single word that recurs widely and is
-    // not generic filler. Generic unigrams ("level") can still appear as chips
-    // but never get defined or quizzed.
-    const important = (c.isBigram || df >= minDf2 + 1) && !isGenericUnigram(key, c.isBigram);
+    // not generic filler. Generic unigrams ("level") and adjective-headed labels
+    // ("ancient") can still appear as chips but never get defined or quizzed --
+    // an adjective can't head the noun phrase a checkpoint question needs.
+    const important =
+      (c.isBigram || df >= minDf2 + 1) &&
+      !isGenericUnigram(key, c.isBigram) &&
+      !isAdjectiveHeaded(bestSurface);
     return {
       id: key,
       label: bestSurface,

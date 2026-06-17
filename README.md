@@ -54,7 +54,7 @@ configured, a built-in heuristic branches instead; everything still works.
 ## Startup flow
 
 On first visit (and any time via **Retune preferences** on the home screen) a 3-step flow asks
-how you *think* you learn: which source materials you reach for, how a topic should open
+how you *prefer* to learn: which source materials you reach for, how a topic should open
 (ground-up / balanced / into the debate), and how often you want weave checkpoints. The answers
 **warm-start** the source-type bandit as a *low-confidence prior* (2 phantom pulls per arm) and
 configure the loom — then evidence takes over. What you actually clip, open, and weave outweighs
