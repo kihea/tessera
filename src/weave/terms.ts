@@ -1,0 +1,231 @@
+// Concept extraction: find the terms that recur ACROSS sources. A term that
+// only one source uses is that source's vocabulary; a term many independent
+// sources share is part of the topic's actual structure -- a thread worth
+// weaving. Plain TF-IDF-style statistics, no model, fully inspectable.
+
+import type { Concept, Passage } from '../types';
+import { stripUrls } from '../research/net';
+
+const STOP = new Set(
+  (
+    // URL fragments: tokenization strips whole URLs, but stray pieces ("www",
+    // "com" in a bare domain mention) must never weave either.
+    'http https www com org net edu gov html htm php pdf url link links website site sites blog wiki ' +
+    'a an the and or but nor so yet for of in on at to from by with about into over after before ' +
+    'between under above below up down out off again further then once here there all any both each ' +
+    'few more most other some such no not only own same than too very can will just should now this ' +
+    'that these those it its is are was were be been being have has had having do does did doing would ' +
+    'could may might must shall what which who whom whose when where why how if because as until while ' +
+    'their they them he she his her him you your yours we our ours i me my mine also one two three ' +
+    'many much like get got make made use used using way ways thing things something anything new old ' +
+    'first second often usually within without however therefore thus although though since even still ' +
+    'rather really quite per via etc example called known see refer based given take takes taken need ' +
+    'needs different several including include includes around among during against able less least ' +
+    'lot point case cases part parts kind sort means typically generally specifically particular ' +
+    'people time year years day days work works well good better best say says said another every ' +
+    // meta-words that describe discourse rather than the topic itself
+    'term terms word phrase name fact facts question questions answer answers argument claim claims ' +
+    'article page section chapter author writer reader comment post thread topic subject discussion ' +
+    'paper papers abstract abstracts study studies become becomes became becoming ' +
+    // generic method/discourse filler that recurs across any technical corpus
+    'specific various certain approach approaches result results process processes number numbers ' +
+    'method methods involved involving related relating associated due based common single multiple'
+  ).split(/\s+/),
+);
+
+// Generic adjectives/quantifiers and catch-all nouns that recur across ANY
+// corpus. They can still appear inside a meaningful bigram ("energy level"),
+// but on their own they are not threads worth defining or quizzing -- exactly
+// the "level"/"low" problem. Kept as a soft demotion + importance gate rather
+// than a hard stop so bigrams survive.
+const GENERIC = new Set(
+  (
+    'low high higher lower large small big huge long short overall total main basic simple general ' +
+    'common average standard normal typical broad wide narrow major minor full current recent modern ' +
+    'early late good great strong weak similar different level levels amount kind area areas type types ' +
+    'range degree extent factor factors aspect aspects feature features element elements ' +
+    // generic change/quantity/abstract nouns and verbs that recur in any corpus
+    'increase increases rise rises rising fall falls decline declines decrease decreases change changes ' +
+    'cost costs effect effects impact impacts set sets real future past present economic role roles ' +
+    'value values measure measures group groups system systems important trend trends period periods ' +
+    'negative positive central simple complex large-scale ' +
+    // generic verbs of making/communicating that recur in any narrative corpus
+    'read reads reading developed develop develops developing written wrote writes sent send sends ' +
+    // bare time-and-place words: when they matter, they appear in a bigram
+    'century centuries decade decades era eras month months early-modern world country countries ' +
+    // vague abstractions that test nothing on their own ("power", "ideas")
+    'interest interests power powers idea ideas history histories earlier later ' +
+    // bare qualifiers: meaningful only attached to a noun ("finite sequence",
+    // "continuous function") -- the bigram survives, the naked adjective never
+    // anchors a question ("where do dft and finite disagree" must not happen)
+    'finite infinite discrete continuous linear nonlinear arbitrary exact approximate ' +
+    'equivalent corresponding respective constant constants variable variables uniform ' +
+    'maximum minimum optimal initial final original modern contemporary ' +
+    // task-shaped filler: every instructional corpus is full of these
+    'task tasks goal goals purpose purposes problem problems solution solutions'
+  ).split(/\s+/),
+);
+
+/**
+ * Is this concept id generic filler -- a unigram from the GENERIC set? Such a
+ * term may still appear as a chip or inside a bigram, but it must never be
+ * defined, quizzed, or woven into a checkpoint on its own.
+ */
+export function isGenericTerm(id: string): boolean {
+  return !id.includes(' ') && GENERIC.has(id);
+}
+
+function isGenericUnigram(key: string, isBigram: boolean): boolean {
+  return !isBigram && GENERIC.has(key);
+}
+
+function tokenize(text: string): string[] {
+  return stripUrls(text)
+    .toLowerCase()
+    .replace(/[^a-z0-9'’-]+/g, ' ')
+    .split(/\s+/)
+    .map((w) => w.replace(/^['’-]+|['’-]+$/g, '').replace(/['’]s$/, ''))
+    .filter((w) => w.length >= 3 && !STOP.has(w) && !/^\d+$/.test(w));
+}
+
+/** Naive singular/plural folding so "models" and "model" weave together. */
+export function normalizeTerm(term: string): string {
+  return term
+    .split(' ')
+    .map((w) => {
+      if (w.length > 5 && /(sses|shes|ches|xes|zes)$/.test(w)) return w.slice(0, -2); // presses -> press
+      if (w.length > 4 && w.endsWith('s') && !w.endsWith('ss') && !w.endsWith('us')) return w.slice(0, -1);
+      return w;
+    })
+    .join(' ');
+}
+
+interface Candidate {
+  passages: Set<string>;
+  surfaces: Map<string, number>;
+  isBigram: boolean;
+}
+
+export function extractConcepts(passages: Passage[], query: string, max = 24): Concept[] {
+  const queryTokens = new Set(tokenize(query).map(normalizeTerm));
+  const candidates = new Map<string, Candidate>();
+
+  const note = (key: string, surface: string, passageId: string, isBigram: boolean) => {
+    let c = candidates.get(key);
+    if (!c) {
+      c = { passages: new Set(), surfaces: new Map(), isBigram };
+      candidates.set(key, c);
+    }
+    c.passages.add(passageId);
+    c.surfaces.set(surface, (c.surfaces.get(surface) ?? 0) + 1);
+  };
+
+  for (const passage of passages) {
+    const tokens = tokenize(passage.text);
+    for (let i = 0; i < tokens.length; i++) {
+      const uni = normalizeTerm(tokens[i]);
+      if (!queryTokens.has(uni)) note(uni, tokens[i], passage.id, false);
+      if (i + 1 < tokens.length) {
+        const bi = normalizeTerm(`${tokens[i]} ${tokens[i + 1]}`);
+        // A bigram may include a query token ("language model" for query
+        // "language models") as long as it is not the query itself.
+        if (![...queryTokens].every((q) => bi.includes(q)) || queryTokens.size === 0) {
+          note(bi, `${tokens[i]} ${tokens[i + 1]}`, passage.id, true);
+        }
+      }
+    }
+  }
+
+  const n = passages.length;
+  const minDf = n >= 14 ? 3 : 2;
+  const scored: { key: string; c: Candidate; score: number }[] = [];
+  for (const [key, c] of candidates) {
+    const df = c.passages.size;
+    if (df < minDf) continue;
+    if (df > Math.max(4, n * 0.6)) continue; // ubiquitous = not discriminating
+    // Multi-word terms are the most specific; generic single words are demoted
+    // hard so meaningful threads win the limited concept slots.
+    const score = df * (c.isBigram ? 2.1 : 1) * (isGenericUnigram(key, c.isBigram) ? 0.3 : 1);
+    scored.push({ key, c, score });
+  }
+  scored.sort((a, b) => b.score - a.score);
+
+  // Prefer a bigram over the unigrams it contains when the bigram carries
+  // most of the unigram's occurrences ("neural network" beats "neural").
+  const corpusTextEarly = passages.map((p) => p.text).join('\n');
+  const isAcronymWord = (w: string) =>
+    w.length <= 5 && acronymCase(w, corpusTextEarly) === w.toUpperCase();
+  const chosen: { key: string; c: Candidate }[] = [];
+  for (const cand of scored) {
+    if (chosen.length >= max) break;
+    if (!cand.c.isBigram) {
+      const swallowed = chosen.some(
+        (b) => b.c.isBigram && b.key.split(' ').includes(cand.key) && b.c.passages.size >= cand.c.passages.size * 0.55,
+      );
+      if (swallowed) continue;
+    } else {
+      const dupe = chosen.some((b) => b.key === cand.key);
+      if (dupe) continue;
+      // "transform dft" is a window artifact of "...transform (DFT)": when a
+      // bigram contains an acronym that recurs MORE on its own, the acronym is
+      // the real thread and the bigram is noise.
+      const fragment = cand.key.split(' ').some((w) => {
+        if (!isAcronymWord(w)) return false;
+        const uni = candidates.get(w);
+        return !!uni && uni.passages.size >= cand.c.passages.size;
+      });
+      if (fragment) continue;
+    }
+    chosen.push(cand);
+  }
+
+  const minDf2 = n >= 14 ? 3 : 2;
+  const corpusText = passages.map((p) => p.text).join('\n');
+  return chosen.map(({ key, c }) => {
+    let bestSurface = key;
+    let bestCount = -1;
+    for (const [surface, count] of c.surfaces) {
+      if (count > bestCount) {
+        bestCount = count;
+        bestSurface = surface;
+      }
+    }
+    bestSurface = acronymCase(bestSurface, corpusText);
+    const df = c.passages.size;
+    // Meaningful enough to anchor a reference card, a check, or a checkpoint:
+    // a specific multi-word term, or a single word that recurs widely and is
+    // not generic filler. Generic unigrams ("level") can still appear as chips
+    // but never get defined or quizzed.
+    const important = (c.isBigram || df >= minDf2 + 1) && !isGenericUnigram(key, c.isBigram);
+    return {
+      id: key,
+      label: bestSurface,
+      df,
+      weight: Math.log(1 + n / df),
+      passageIds: [...c.passages],
+      important,
+    };
+  });
+}
+
+/**
+ * Tokenization lowercases everything, so "DFT" would display (and be asked
+ * about) as "dft". When the sources themselves write a short term in capitals
+ * most of the time, restore that casing for the label.
+ */
+function acronymCase(surface: string, corpusText: string): string {
+  if (surface.length > 6 || surface.includes(' ')) return surface;
+  const esc = surface.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const hits = corpusText.match(new RegExp(`\\b${esc}(?:s|es)?\\b`, 'gi')) ?? [];
+  if (hits.length === 0) return surface;
+  const upper = hits.filter((h) => {
+    const stem = h.replace(/(?:es|s)$/i, '');
+    return stem === stem.toUpperCase();
+  }).length;
+  return upper / hits.length >= 0.6 ? surface.toUpperCase() : surface;
+}
+
+/** Which of the given concepts appear in this passage? (id list) */
+export function conceptsIn(passage: Passage, concepts: Concept[]): string[] {
+  return concepts.filter((c) => c.passageIds.includes(passage.id)).map((c) => c.id);
+}

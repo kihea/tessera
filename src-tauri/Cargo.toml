@@ -1,0 +1,30 @@
+[package]
+name = "tessera-app"
+version = "0.1.0"
+description = "Tessera — learn from the sources themselves"
+edition = "2021"
+
+# The Rust core. Today it carries the model transport (local Ollama /
+# OpenAI-compatible / Anthropic) so API keys and CORS never touch the
+# webview; it is also the seam where the TS weave engine migrates piece by
+# piece (this crate's logic is written to stay wasm32-compatible, so the same
+# core can serve the pure-web build via WebAssembly later).
+
+[lib]
+name = "tessera_app_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+# Opens source links in the user's real browser (the webview swallows
+# target="_blank"); the TS side calls this via @tauri-apps/plugin-opener.
+tauri-plugin-opener = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+# Pinned: time 0.3.48 adds impls that collide with cookie 0.18's blanket
+# `From` (E0119) through tauri's dependency tree. Lift when cookie ships a fix.
+time = "=0.3.47"

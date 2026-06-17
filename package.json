@@ -1,0 +1,40 @@
+{
+  "name": "tessera",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Learn from the sources themselves — a learning feed of verbatim excerpts from real sources, woven by connection.",
+  "license": "MIT",
+  "author": "Kihea",
+  "homepage": "https://github.com/kihea/tessera#readme",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kihea/tessera.git"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "npm run typecheck && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "tauri": "tauri",
+    "app:dev": "tauri dev",
+    "app:build": "tauri build"
+  },
+  "dependencies": {
+    "@mlc-ai/web-llm": "^0.2.84",
+    "@tauri-apps/api": "^2.11.0",
+    "@tauri-apps/plugin-opener": "^2.5.4",
+    "dompurify": "^3.2.4",
+    "marked": "^15.0.6",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.11.2",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "typescript": "~5.7.2",
+    "vite": "^6.1.0"
+  }
+}

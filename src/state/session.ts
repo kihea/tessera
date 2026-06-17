@@ -1,0 +1,535 @@
+// Session orchestrator: research -> weave -> online feed (the useFeed analog
+// from TestApp, rebuilt for source passages). Owns notes so the feed pane can
+// clip excerpts straight into the notebook pane.
+//
+// Gating: the feed never generates or reveals material past an unanswered gate
+// (a weave checkpoint or a check for understanding). Clearing the gate resumes
+// generation. This is what "lock the next cards until it is answered, then the
+// material continues" means in the data flow.
+
+import { useCallback, useEffect, useRef, useState } from 'react';
+import type {
+  CardSignals,
+  CheckCard,
+  CheckpointCard,
+  Corpus,
+  DefinitionCard,
+  FeedCard,
+  FormulaCard,
+  GateCard,
+  PassageCard,
+  ProviderProgress,
+} from '../types';
+import { isGate } from '../types';
+import { research } from '../research/providers';
+import { buildStudyMap, mergeResearch, researchBranches } from '../research/expand';
+import { queryTokens, urlsToMarkdownLinks } from '../research/net';
+import { defineTerm } from '../research/wiktionary';
+import { extractConcepts } from '../weave/terms';
+import { annotateDefinitions, buildConnections } from '../weave/connections';
+import { annotateDepth, DEPTH_LABEL } from '../weave/depth';
+import type { DepthRung } from '../weave/depth';
+import { Loom } from '../weave/loom';
+import { TypeBandit } from '../weave/bandit';
+import { loadWeights, saveWeights } from '../weave/weights';
+import type { WeaveWeights } from '../weave/weights';
+import { autoTune } from '../weave/tune';
+import type { TuneResult } from '../weave/tune';
+import { aiConfigured } from '../ai/llm';
+import type { WebllmProgress } from '../ai/webllm';
+import {
+  addReport,
+  DEFAULT_PREFS,
+  loadBandit,
+  loadNotes,
+  loadPrefs,
+  loadReports,
+  loadSettings,
+  rememberTopic,
+  saveBandit,
+  saveNotes,
+  slugify,
+} from './storage';
+
+export type Phase = 'researching' | 'expanding' | 'weaving' | 'ready' | 'empty';
+
+export interface SessionStats {
+  cardsViewed: number;
+  clips: number;
+  checkpoints: number;
+  checksCorrect: number;
+  checksAnswered: number;
+}
+
+const LOOKAHEAD = 4;
+
+function emptySignals(): CardSignals {
+  return { dwellMs: 0, clipped: false, openedSource: false, checkpointInserted: false };
+}
+
+export function useSession(query: string) {
+  const slug = slugify(query);
+  const [phase, setPhase] = useState<Phase>('researching');
+  const [progress, setProgress] = useState<ProviderProgress[]>([]);
+  // Cold-start load progress for the in-browser small model (null = warm or
+  // not in use), surfaced during the "expanding" phase so the screen shows a
+  // bar instead of appearing frozen on the first run / after a reload.
+  const [modelLoad, setModelLoad] = useState<WebllmProgress | null>(null);
+  // True while a configured model is actively generating the study map -- the
+  // one place any model runs. Drives a "working" spinner so generation on a
+  // slow machine reads as busy, not frozen.
+  const [mapGenerating, setMapGenerating] = useState(false);
+  const [corpus, setCorpus] = useState<Corpus | null>(null);
+  const [cards, setCards] = useState<FeedCard[]>([]);
+  const [completedGates, setCompletedGates] = useState<Set<string>>(new Set());
+  const [skippedGates, setSkippedGates] = useState<Set<string>>(new Set());
+  const [reportedDocs, setReportedDocs] = useState<Set<string>>(new Set());
+  const [mutedConcepts, setMutedConcepts] = useState<Set<string>>(new Set());
+  const [notes, setNotes] = useState<string>(() => loadNotes(slug) ?? `# ${query}\n\n`);
+  const [noteInsertTick, setNoteInsertTick] = useState(0);
+  const [viewedCardIds, setViewedCardIds] = useState<Set<string>>(new Set());
+  const [stats, setStats] = useState<SessionStats>({
+    cardsViewed: 0,
+    clips: 0,
+    checkpoints: 0,
+    checksCorrect: 0,
+    checksAnswered: 0,
+  });
+  const [stage, setStage] = useState<{ score: number; rung: DepthRung; label: string }>({
+    score: 0,
+    rung: 0,
+    label: DEPTH_LABEL[0],
+  });
+
+  const loomRef = useRef<Loom | null>(null);
+  const corpusRef = useRef<Corpus | null>(null); // cached so the dev panel can replay the feed without re-research
+  const weightsRef = useRef<WeaveWeights>(loadWeights());
+  const banditRef = useRef<TypeBandit | null>(null);
+  if (!banditRef.current) banditRef.current = new TypeBandit(loadBandit());
+  const cardsRef = useRef<FeedCard[]>([]);
+  const completedGatesRef = useRef<Set<string>>(new Set());
+  const lastVisibleIndexRef = useRef(0);
+  const doneRef = useRef(false);
+  const signalsRef = useRef(new Map<string, CardSignals>());
+  const dwellStartRef = useRef(new Map<string, number>());
+  const rewardedRef = useRef(new Set<string>());
+
+  // -- gate-aware generation (online, like the engine's nextCard loop) --------
+  // Never generates past a gate that has not been cleared.
+  const pumpTo = useCallback((target: number) => {
+    const loom = loomRef.current;
+    if (!loom || doneRef.current) return;
+    const add: FeedCard[] = [];
+    const openGate = () =>
+      [...cardsRef.current, ...add].some((c) => isGate(c) && !completedGatesRef.current.has(c.id));
+    while (cardsRef.current.length + add.length < target) {
+      if (openGate()) break;
+      const card = loom.next();
+      if (!card) {
+        doneRef.current = true;
+        break;
+      }
+      add.push(card);
+      if (card.kind === 'end') {
+        doneRef.current = true;
+        break;
+      }
+    }
+    if (add.length > 0) {
+      cardsRef.current = [...cardsRef.current, ...add];
+      setCards(cardsRef.current);
+      setStage(loom.stage());
+    }
+  }, []);
+
+  // Rebuild the Loom over the CACHED corpus with new weights and replay the feed
+  // from the top -- no re-research, no model, no re-weave. Powers the dev tuning
+  // panel; the weights persist so they also drive future sessions.
+  const reLoom = useCallback(
+    (weights: WeaveWeights) => {
+      const built = corpusRef.current;
+      if (!built) return;
+      weightsRef.current = weights;
+      saveWeights(weights);
+      const prefs = loadPrefs() ?? DEFAULT_PREFS;
+      const loom = new Loom(
+        built,
+        banditRef.current!,
+        { checkpointEvery: prefs.checkpointEvery, opening: prefs.opening },
+        weights,
+      );
+      loomRef.current = loom;
+      cardsRef.current = [];
+      doneRef.current = false;
+      completedGatesRef.current = new Set();
+      setCompletedGates(new Set());
+      setSkippedGates(new Set());
+      setCards([]);
+      pumpTo(LOOKAHEAD);
+      setStage(loom.stage());
+    },
+    [pumpTo],
+  );
+
+  // Search WeaveWeights for the configuration that maximizes a feed-quality
+  // objective on THIS session's corpus (separable CMA-ES; see weave/tune.ts),
+  // then apply + persist the winner via reLoom. Powers the dev panel's Auto-tune.
+  const tuneWeights = useCallback(
+    async (onProgress?: (gen: number, best: number) => void): Promise<TuneResult | null> => {
+      const built = corpusRef.current;
+      if (!built) return null;
+      const prefs = loadPrefs() ?? DEFAULT_PREFS;
+      const result = await autoTune(
+        built,
+        { checkpointEvery: prefs.checkpointEvery, opening: prefs.opening },
+        weightsRef.current,
+        onProgress,
+      );
+      reLoom(result.weights);
+      return result;
+    },
+    [reLoom],
+  );
+
+  // -- boot pipeline ----------------------------------------------------------
+  useEffect(() => {
+    let cancelled = false;
+    rememberTopic(query, slug);
+    setPhase('researching');
+    setProgress([]);
+    setModelLoad(null);
+    setMapGenerating(false);
+    setCards([]);
+    setCompletedGates(new Set());
+    setSkippedGates(new Set());
+    setReportedDocs(new Set());
+    setMutedConcepts(new Set());
+    setCorpus(null);
+    cardsRef.current = [];
+    completedGatesRef.current = new Set();
+    doneRef.current = false;
+
+    (async () => {
+      const onProgress = (update: { name: string; status: 'pending' | 'ok' | 'fail'; passages: number }) => {
+        if (cancelled) return;
+        setProgress((prev) => {
+          const next = prev.filter((p) => p.name !== update.name);
+          next.push(update);
+          return next.sort((a, b) => a.name.localeCompare(b.name));
+        });
+      };
+
+      const seed = await research(query, onProgress);
+      if (cancelled) return;
+      if (seed.passages.length < 3) {
+        setPhase('empty');
+        return;
+      }
+
+      // Sources the learner has reported never enter another weave.
+      const reportedUrls = new Set(loadReports().map((r) => r.url));
+      let docs = seed.docs.filter((d) => !reportedUrls.has(d.url));
+      let liveIds = new Set(docs.map((d) => d.id));
+      let passages = seed.passages.filter((p) => liveIds.has(p.docId));
+      const formulas = seed.formulas;
+
+      // -- branch out: squeeze the main idea for what it presupposes/contains.
+      // The study map (model-built when one is configured, heuristic
+      // otherwise) names neighboring threads; each is researched with the
+      // same real providers, within the learner's chosen reach.
+      setPhase('expanding');
+      const radius = Math.max(0, Math.min(1, loadSettings().ai?.radius ?? 0.5));
+      const seedConcepts = extractConcepts(passages, query);
+      const seedDocMap = new Map(docs.map((d) => [d.id, d]));
+      if (aiConfigured()) setMapGenerating(true); // heuristic returns instantly — no spinner
+      const studyMap = await buildStudyMap(query, passages, seedDocMap, seedConcepts, radius, (p) => {
+        if (!cancelled) setModelLoad(p);
+      });
+      if (cancelled) return;
+      setMapGenerating(false);
+      setModelLoad(null); // model work is done; clear the bar for branch research
+      const branchRes = await researchBranches(studyMap, radius, onProgress);
+      if (cancelled) return;
+      const merged = mergeResearch(
+        { docs, passages },
+        {
+          docs: branchRes.docs.filter((d) => !reportedUrls.has(d.url)),
+          passages: branchRes.passages,
+        },
+        140,
+      );
+      docs = merged.docs;
+      passages = merged.passages;
+      liveIds = new Set(docs.map((d) => d.id));
+
+      setPhase('weaving');
+      const concepts = extractConcepts(passages, query);
+      annotateDefinitions(passages, concepts);
+
+      // Tie each harvested formula to the threads it grounds: a concept whose
+      // term appears in the equation's own name, section, or introducing prose.
+      for (const f of formulas) {
+        const hay = `${f.caption ?? ''} ${f.section ?? ''} ${f.context ?? ''}`.toLowerCase();
+        f.conceptIds = concepts
+          .filter((c) => {
+            if (!c.important) return false;
+            const esc = c.label.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            return new RegExp(`\\b${esc}(?:s|es)?\\b`).test(hay);
+          })
+          .map((c) => c.id);
+      }
+
+      // Wiktionary fallback ONLY for recurring, meaningful terms no source
+      // defines -- and the sense is chosen in the corpus's own context, so
+      // "spectral" reads as spectra, not spectres, inside a Fourier session.
+      // Each context word carries its concept's df as weight: central terms
+      // outvote words contributed by niche bigrams when senses compete.
+      const contextWords = new Map<string, number>();
+      for (const c of concepts) {
+        for (const w of c.id.split(' ')) {
+          if (w.length >= 4) contextWords.set(w, Math.max(contextWords.get(w) ?? 0, c.df));
+        }
+      }
+      for (const w of queryTokens(query)) {
+        contextWords.set(w, Math.max(contextWords.get(w) ?? 0, 6));
+      }
+      const orphans = concepts
+        .filter((c) => c.important && !c.definedByPassage && c.df >= 3)
+        .slice(0, 8);
+      await Promise.all(
+        orphans.map(async (c) => {
+          // Look up the normalized form first ("function", not "functions") --
+          // plural slugs land on form-of stubs; fall back to the surface label.
+          const def =
+            (await defineTerm(c.id, contextWords)) ??
+            (c.id !== c.label.toLowerCase() ? await defineTerm(c.label, contextWords) : null);
+          if (def) c.definition = def;
+        }),
+      );
+      if (cancelled) return;
+
+      const docMap = new Map(docs.map((d) => [d.id, d]));
+      annotateDepth(passages, docMap, concepts);
+      const built: Corpus = {
+        docs: docMap,
+        passages,
+        concepts,
+        connections: buildConnections(passages, concepts),
+        formulas: formulas.filter((f) => f.conceptIds.length > 0),
+        studyMap,
+      };
+      const prefs = loadPrefs() ?? DEFAULT_PREFS;
+      const loom = new Loom(
+        built,
+        banditRef.current!,
+        { checkpointEvery: prefs.checkpointEvery, opening: prefs.opening },
+        weightsRef.current,
+      );
+      loomRef.current = loom;
+      corpusRef.current = built;
+      cardsRef.current = [];
+      setCorpus(built);
+      pumpTo(LOOKAHEAD);
+      setPhase('ready');
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [slug]);
+
+  const ensureAhead = useCallback(
+    (visibleIndex: number) => {
+      pumpTo(visibleIndex + LOOKAHEAD);
+    },
+    [pumpTo],
+  );
+
+  // -- engagement signals -> bandit reward (learning gain, not dwell) ----------
+  const sig = (cardId: string): CardSignals => {
+    let s = signalsRef.current.get(cardId);
+    if (!s) {
+      s = emptySignals();
+      signalsRef.current.set(cardId, s);
+    }
+    return s;
+  };
+
+  const onCardVisible = useCallback(
+    (card: FeedCard, listIndex: number) => {
+      lastVisibleIndexRef.current = listIndex;
+      ensureAhead(listIndex + 1);
+      dwellStartRef.current.set(card.id, performance.now());
+      setViewedCardIds((prev) => {
+        if (prev.has(card.id)) return prev;
+        const next = new Set(prev);
+        next.add(card.id);
+        setStats((s) => ({ ...s, cardsViewed: s.cardsViewed + 1 }));
+        return next;
+      });
+    },
+    [ensureAhead],
+  );
+
+  const onCardHidden = useCallback((card: FeedCard) => {
+    const start = dwellStartRef.current.get(card.id);
+    if (start !== undefined) {
+      sig(card.id).dwellMs += performance.now() - start;
+      dwellStartRef.current.delete(card.id);
+    }
+    if (card.kind !== 'passage' || rewardedRef.current.has(card.id)) return;
+    rewardedRef.current.add(card.id);
+    banditRef.current!.reward(card.doc.sourceType, sig(card.id));
+    saveBandit(banditRef.current!.toJSON());
+  }, []);
+
+  // -- notes ------------------------------------------------------------------
+  useEffect(() => {
+    const timer = setTimeout(() => saveNotes(slug, notes), 400);
+    return () => clearTimeout(timer);
+  }, [slug, notes]);
+
+  const appendToNotes = useCallback((md: string) => {
+    setNotes((n) => `${n.trimEnd()}\n\n${md}\n`);
+    setNoteInsertTick((t) => t + 1);
+  }, []);
+
+  const clipCard = useCallback(
+    (card: PassageCard | DefinitionCard | FormulaCard) => {
+      if (card.kind === 'passage') {
+        const { passage, doc } = card;
+        const who = doc.author ? `, ${doc.author}` : '';
+        const where = passage.anchor ? `, ${passage.anchor}` : '';
+        appendToNotes(
+          `> ${urlsToMarkdownLinks(passage.text)}\n>\n> — [${doc.title}](${passage.anchorUrl ?? doc.url})${who} (${doc.provider}${where})`,
+        );
+      } else if (card.kind === 'formula') {
+        const cap = card.caption ?? card.label;
+        appendToNotes(
+          `**${cap}**\n\n![${cap}](${card.svgUrl})\n\n— [${card.sourceTitle}](${card.url})`,
+        );
+      } else {
+        appendToNotes(`> **${card.label}** — ${card.definition}\n>\n> — [${card.source}](${card.url})`);
+      }
+      sig(card.id).clipped = true;
+      setStats((s) => ({ ...s, clips: s.clips + 1 }));
+    },
+    [appendToNotes],
+  );
+
+  const openSource = useCallback((card: FeedCard) => {
+    sig(card.id).openedSource = true;
+  }, []);
+
+  // -- gates: clearing one unlocks the feed and resumes generation ------------
+  const clearGate = useCallback(
+    (cardId: string) => {
+      if (completedGatesRef.current.has(cardId)) return;
+      completedGatesRef.current = new Set(completedGatesRef.current).add(cardId);
+      setCompletedGates(completedGatesRef.current);
+      // Resume: fill the next window now that the gate is open.
+      pumpTo(cardsRef.current.length + LOOKAHEAD);
+      if (loomRef.current) setStage(loomRef.current.stage());
+    },
+    [pumpTo],
+  );
+
+  /** The learner wrote their own connection -- real synthesis (Socratic). */
+  const submitCheckpoint = useCallback(
+    (card: CheckpointCard, answer: string) => {
+      const written = answer.trim();
+      appendToNotes(
+        `## Weave: ${card.labelA} × ${card.labelB}\n\n` +
+          `*${card.prompt}*\n\n` +
+          `> ${urlsToMarkdownLinks(card.quoteA.text)}\n>\n> — [${card.quoteA.title}](${card.quoteA.url}) (card ${card.cardRefA})\n\n` +
+          `> ${urlsToMarkdownLinks(card.quoteB.text)}\n>\n> — [${card.quoteB.title}](${card.quoteB.url}) (card ${card.cardRefB})\n\n` +
+          `**My connection:** ${written}\n`,
+      );
+      sig(card.id).checkpointInserted = true;
+      setStats((s) => ({ ...s, checkpoints: s.checkpoints + 1 }));
+      loomRef.current?.noteCheckpointWoven(); // real synthesis advances mastery
+      clearGate(card.id);
+    },
+    [appendToNotes, clearGate],
+  );
+
+  /** A check for understanding was answered -- correctness drives retention. */
+  const submitCheck = useCallback(
+    (card: CheckCard, correct: boolean) => {
+      banditRef.current!.rewardRetention(card.sourceType, correct);
+      saveBandit(banditRef.current!.toJSON());
+      setStats((s) => ({
+        ...s,
+        checksAnswered: s.checksAnswered + 1,
+        checksCorrect: s.checksCorrect + (correct ? 1 : 0),
+      }));
+      clearGate(card.id);
+    },
+    [clearGate],
+  );
+
+  /**
+   * Accessibility: pass a gate without answering it. The feed reopens, but
+   * no learning signal fires -- a skip is silence, not evidence.
+   */
+  const skipGate = useCallback(
+    (card: GateCard) => {
+      setSkippedGates((prev) => new Set(prev).add(card.id));
+      clearGate(card.id);
+    },
+    [clearGate],
+  );
+
+  /**
+   * Flag a bad source (broken OCR, off-topic, untrustworthy). Its remaining
+   * excerpts leave this weave, and it never enters a future one.
+   */
+  const reportSource = useCallback((card: PassageCard) => {
+    addReport(card.doc.url, card.doc.title);
+    loomRef.current?.excludeDoc(card.doc.id);
+    setReportedDocs((prev) => new Set(prev).add(card.doc.id));
+  }, []);
+
+  const toggleMuteConcept = useCallback((conceptId: string) => {
+    setMutedConcepts((prev) => {
+      const next = new Set(prev);
+      if (next.has(conceptId)) next.delete(conceptId);
+      else next.add(conceptId);
+      return next;
+    });
+  }, []);
+
+  return {
+    slug,
+    phase,
+    progress,
+    modelLoad,
+    mapGenerating,
+    reLoom,
+    tuneWeights,
+    corpus,
+    cards,
+    completedGates,
+    skippedGates,
+    reportedDocs,
+    mutedConcepts,
+    notes,
+    setNotes,
+    noteInsertTick,
+    viewedCardIds,
+    stats,
+    stage,
+    onCardVisible,
+    onCardHidden,
+    clipCard,
+    openSource,
+    submitCheckpoint,
+    submitCheck,
+    skipGate,
+    reportSource,
+    toggleMuteConcept,
+  };
+}
+
+export type Session = ReturnType<typeof useSession>;
