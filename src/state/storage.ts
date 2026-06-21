@@ -219,6 +219,8 @@ export interface AppSettings {
   politeEmail?: string;
   /** YouTube Data API key (optional, desktop only) -- enables the video feed. */
   youtubeApiKey?: string;
+  /** SerpApi key (optional, desktop only) -- enables the Google Scholar feed. */
+  serpApiKey?: string;
   /** Local/API model used to connect sources (optional). */
   ai?: AiSettings;
 }

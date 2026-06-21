@@ -13,6 +13,7 @@ import { seedTitlesFor } from './seeds';
 import { searchWiki } from './wiki';
 import { harvestWikiPages } from './wikipage';
 import { searchYouTube } from './youtube';
+import { searchScholar } from './scholar';
 import { searchBakedVideos } from './bakedVideos';
 import { dropLeadingMeta } from './net';
 import { filterToDominantLanguage } from './lang';
@@ -73,6 +74,10 @@ export async function research(query: string, onProgress: ProgressFn): Promise<R
       },
     },
     { name: 'Crossref', run: () => searchCrossref(query) },
+    // After the abstract providers: Scholar's snippet is a short, truncated
+    // excerpt, so when it mirrors a fuller OpenAlex/Crossref abstract the fuller
+    // verbatim text wins the dedup. Desktop-only, keyed via SerpApi (see scholar.ts).
+    { name: 'Google Scholar', run: () => searchScholar(query) },
     { name: 'Hacker News', run: () => searchHN(query) },
     { name: 'Open Library', run: () => searchOpenLibrary(query) },
     { name: 'Chronicling America', run: () => searchChronicling(query) },

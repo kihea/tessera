@@ -33,6 +33,7 @@ export function SettingsScreen({ onDone, onRetune }: { onDone: () => void; onRet
   const [apiKey, setApiKey] = useState(existing.openAlexApiKey ?? '');
   const [email, setEmail] = useState(existing.politeEmail ?? '');
   const [youtubeKey, setYoutubeKey] = useState(existing.youtubeApiKey ?? '');
+  const [serpKey, setSerpKey] = useState(existing.serpApiKey ?? '');
   const [showKey, setShowKey] = useState(false);
   const [status, setStatus] = useState<KeyStatus>('idle');
   const [ai, setAi] = useState(existing.ai ?? DEFAULT_AI);
@@ -44,6 +45,7 @@ export function SettingsScreen({ onDone, onRetune }: { onDone: () => void; onRet
       openAlexApiKey: apiKey.trim() || undefined,
       politeEmail: email.trim() || undefined,
       youtubeApiKey: youtubeKey.trim() || undefined,
+      serpApiKey: serpKey.trim() || undefined,
       ai,
     });
     onDone();
@@ -113,6 +115,29 @@ export function SettingsScreen({ onDone, onRetune }: { onDone: () => void; onRet
               value={youtubeKey}
               onChange={(e) => setYoutubeKey(e.target.value)}
               placeholder="paste a YouTube Data API key, or leave empty"
+              autoComplete="off"
+              spellCheck={false}
+            />
+          </div>
+        </section>
+
+        <section className="settings-field">
+          <label htmlFor="serp-key">SerpApi key (Google Scholar)</label>
+          <p className="settings-hint">
+            Optional, <strong>desktop app only</strong>. Google Scholar has no public API and blocks
+            direct browser access, so the Scholar feed routes through a{' '}
+            <a {...extLinkProps('https://serpapi.com/google-scholar-api')}>SerpApi</a> key. With one,
+            relevant Scholar results are woven in — each result&rsquo;s own snippet, linked to the
+            full work. Left empty (or in the web build) no Scholar results are gathered. Stored only
+            on this device.
+          </p>
+          <div className="settings-key-row">
+            <input
+              id="serp-key"
+              type={showKey ? 'text' : 'password'}
+              value={serpKey}
+              onChange={(e) => setSerpKey(e.target.value)}
+              placeholder="paste a SerpApi key, or leave empty"
               autoComplete="off"
               spellCheck={false}
             />
