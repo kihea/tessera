@@ -261,6 +261,9 @@ export interface DevFlags {
   entityAware?: boolean;
   /** Pull the knowledge graph in as a source alongside the live providers. */
   graphProvider?: boolean;
+  /** Use the configured model's embeddings to refine the graph (opt-in, off by
+   *  default since it makes extra model calls). */
+  embeddings?: boolean;
 }
 
 /** Read one experimental flag; defaults to ON unless explicitly disabled. */

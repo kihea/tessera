@@ -516,6 +516,17 @@ export function SettingsScreen({ onDone, onRetune }: { onDone: () => void; onRet
                 />
                 <span>Pull the knowledge graph in as a source alongside the live providers</span>
               </label>
+              <label className="settings-check">
+                <input
+                  type="checkbox"
+                  checked={dev.embeddings === true}
+                  onChange={(e) => setDev({ ...dev, embeddings: e.target.checked })}
+                />
+                <span>
+                  Use your model&rsquo;s embeddings to refine the graph (Ollama / OpenAI-compatible;
+                  extra model calls)
+                </span>
+              </label>
             </section>
 
             <section className="settings-field">

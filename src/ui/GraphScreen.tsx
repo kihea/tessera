@@ -11,13 +11,16 @@ import type { FormEvent } from 'react';
 import type { Corpus } from '../types';
 import { useSession } from '../state/session';
 import {
+  enrichGraphWithEmbeddings,
   loadGraph,
   notesForConcepts,
+  saveGraph,
   searchGraph,
   subgraphEdges,
   subgraphToCorpus,
 } from '../state/graphStore';
 import type { KnowledgeGraph } from '../state/graphStore';
+import { embeddingsAvailable } from '../ai/embeddings';
 import type { MapEdge } from './WeaveMap';
 import { slugify } from '../state/storage';
 import { WeaveMap } from './WeaveMap';
@@ -40,8 +43,18 @@ export function GraphScreen({
 
   useEffect(() => {
     let alive = true;
-    loadGraph().then((g) => {
-      if (alive) setGraph(g);
+    loadGraph().then(async (g) => {
+      if (!alive) return;
+      setGraph(g);
+      // Opt-in: refine neighborhoods/abstraction with real concept vectors, then
+      // persist and refresh. No-op (and instant) without an embeddings backend.
+      if (embeddingsAvailable()) {
+        const changed = await enrichGraphWithEmbeddings(g);
+        if (changed && alive) {
+          await saveGraph(g);
+          setGraph({ ...g });
+        }
+      }
     });
     return () => {
       alive = false;

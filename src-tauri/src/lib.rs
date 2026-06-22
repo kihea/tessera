@@ -138,6 +138,59 @@ async fn llm_complete(req: LlmReq) -> Result<String, String> {
     }
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EmbedReq {
+    provider: String,
+    base_url: Option<String>,
+    api_key: Option<String>,
+    model: String,
+    input: Vec<String>,
+}
+
+/// Embed a batch of texts via the configured backend (Ollama or any OpenAI-
+/// compatible server). Returns one vector per input. Optional graph enhancement;
+/// any failure surfaces as an error the TS side treats as "no embeddings".
+#[tauri::command]
+async fn llm_embed(req: EmbedReq) -> Result<Vec<Vec<f32>>, String> {
+    let http = client()?;
+    let to_vecs = |rows: &[Value], pick: &dyn Fn(&Value) -> &Value| -> Vec<Vec<f32>> {
+        rows.iter()
+            .map(|r| {
+                pick(r)
+                    .as_array()
+                    .map(|v| v.iter().filter_map(|x| x.as_f64().map(|f| f as f32)).collect())
+                    .unwrap_or_default()
+            })
+            .collect()
+    };
+    match req.provider.as_str() {
+        "ollama" => {
+            let base = trim_base(&req.base_url, "http://localhost:11434");
+            let data = post_json(
+                http.post(format!("{base}/api/embed")),
+                json!({ "model": req.model, "input": req.input }),
+            )
+            .await?;
+            let rows = data["embeddings"]
+                .as_array()
+                .ok_or("no embeddings in ollama response")?;
+            Ok(to_vecs(rows, &|r| r))
+        }
+        // OpenAI-compatible (api.openai.com, LM Studio, llama.cpp, vLLM, ...)
+        _ => {
+            let base = trim_base(&req.base_url, "https://api.openai.com/v1");
+            let mut builder = http.post(format!("{base}/embeddings"));
+            if let Some(key) = req.api_key.as_deref().filter(|k| !k.trim().is_empty()) {
+                builder = builder.header("authorization", format!("Bearer {key}"));
+            }
+            let data = post_json(builder, json!({ "model": req.model, "input": req.input })).await?;
+            let rows = data["data"].as_array().ok_or("no data in embeddings response")?;
+            Ok(to_vecs(rows, &|r| &r["embedding"]))
+        }
+    }
+}
+
 /// The locally installed Ollama models, for the settings screen.
 #[tauri::command]
 async fn list_ollama_models(base_url: Option<String>) -> Result<Vec<String>, String> {
@@ -360,6 +413,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             llm_complete,
+            llm_embed,
             list_ollama_models,
             yt_search,
             yt_transcript,
