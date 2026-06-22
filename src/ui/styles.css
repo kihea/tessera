@@ -1950,6 +1950,42 @@ a {
   fill: var(--text);
 }
 
+/* forms vs attributes (graph screen): forms are solid entity nodes, attributes
+   are lighter quality nodes; has-attribute edges are dashed. */
+.map-node.attribute circle {
+  fill: transparent;
+  stroke: var(--c-paper, #bc8cff);
+  stroke-dasharray: 3 2;
+}
+.map-node.form circle {
+  stroke: var(--c-encyclopedia, #6ea8fe);
+}
+.map-edge.edge-attribute {
+  stroke: var(--c-paper, #bc8cff);
+  opacity: 0.5;
+}
+.map-edge.edge-abstraction {
+  stroke: var(--c-book, #e3b341);
+  opacity: 0.55;
+}
+
+.graph-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  justify-content: center;
+  padding: 2px 0 8px;
+  font-size: 12px;
+  color: var(--faint);
+}
+.legend-form {
+  color: var(--c-encyclopedia, #6ea8fe);
+}
+.legend-attr,
+.legend-edge-attr {
+  color: var(--c-paper, #bc8cff);
+}
+
 .map-caption {
   color: var(--faint);
   font-size: 12px;

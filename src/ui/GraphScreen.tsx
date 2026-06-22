@@ -10,8 +10,15 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import type { Corpus } from '../types';
 import { useSession } from '../state/session';
-import { loadGraph, notesForConcepts, searchGraph, subgraphToCorpus } from '../state/graphStore';
+import {
+  loadGraph,
+  notesForConcepts,
+  searchGraph,
+  subgraphEdges,
+  subgraphToCorpus,
+} from '../state/graphStore';
 import type { KnowledgeGraph } from '../state/graphStore';
+import type { MapEdge } from './WeaveMap';
 import { slugify } from '../state/storage';
 import { WeaveMap } from './WeaveMap';
 import { FeedPane } from './FeedPane';
@@ -56,6 +63,12 @@ export function GraphScreen({
     const top = [...graph.concepts].sort((a, b) => b.df - a.df).slice(0, 18).map((c) => c.id);
     return top.length ? subgraphToCorpus(graph, top) : null;
   }, [graph, topic, sub]);
+
+  // Typed/degreed edges for the visualization (forms vs attributes, has-attribute).
+  const mapEdges = useMemo<MapEdge[]>(
+    () => (graph && corpus ? subgraphEdges(graph, corpus.concepts.map((c) => c.id)) : []),
+    [graph, corpus],
+  );
 
   // "Broaden" follows the abstraction axis: the most general idea in this
   // region (pig's region -> animal -> animalness), to traverse outward/up.
@@ -166,6 +179,7 @@ export function GraphScreen({
           key={topic ?? '__browse__'}
           topic={topic ?? 'Knowledge graph'}
           corpus={corpus}
+          edges={mapEdges}
           onSearchConcept={onSearch}
         />
       ) : (
@@ -183,10 +197,12 @@ export function GraphScreen({
 function GraphFeed({
   topic,
   corpus,
+  edges,
   onSearchConcept,
 }: {
   topic: string;
   corpus: Corpus;
+  edges: MapEdge[];
   onSearchConcept: (topic: string) => void;
 }) {
   const session = useSession(topic, corpus);
@@ -216,7 +232,14 @@ function GraphFeed({
         cards={session.cards}
         viewedCardIds={session.viewedCardIds}
         onConceptClick={searchConcept}
+        edges={edges}
       />
+      <div className="graph-legend">
+        <span className="legend-item legend-form">● form</span>
+        <span className="legend-item legend-attr">● attribute</span>
+        <span className="legend-item legend-edge-attr">┄ has-attribute</span>
+        <span className="legend-item legend-edge-assoc">— relates (thicker = stronger)</span>
+      </div>
       <div className="session-main graph-main">
         <FeedPane session={session} registerEl={registerEl} onJump={jumpTo} />
         <div className="divider" />
