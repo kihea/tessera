@@ -29,7 +29,50 @@ import { DownloadAppButton } from './DownloadAppButton';
 import type { SourceType } from '../types';
 import { TYPE_LABEL } from './labels';
 
-type KeyStatus = 'idle' | 'testing' | 'rejected' | 'unreachable';
+type KeyError = 'rejected' | 'unreachable';
+type KeyId = 'openalex' | 'guardian' | 'nyt' | 'gnews';
+
+const inTauri = () => typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+
+const KEY_PROVIDER_NAME: Record<KeyId, string> = {
+  openalex: 'OpenAlex',
+  guardian: 'The Guardian',
+  nyt: 'The New York Times',
+  gnews: 'GNews',
+};
+
+// Live validation: a minimal authed request per provider. 401/403 = a bad key;
+// anything else that fails = unreachable (CORS in the web build, or the API
+// down) -- not proof the key is wrong, so the user can still save.
+const KEY_TEST_URL: Record<KeyId, (key: string) => string> = {
+  openalex: (k) => `https://api.openalex.org/works?per-page=1&select=id&api_key=${encodeURIComponent(k)}`,
+  guardian: (k) => `https://content.guardianapis.com/search?q=test&page-size=1&api-key=${encodeURIComponent(k)}`,
+  nyt: (k) => `https://api.nytimes.com/svc/search/v2/articlesearch.json?q=test&api-key=${encodeURIComponent(k)}`,
+  gnews: (k) => `https://gnews.io/api/v4/search?q=test&max=1&token=${encodeURIComponent(k)}`,
+};
+
+async function testKey(url: string): Promise<'ok' | KeyError> {
+  // On the desktop app, validate through the Rust core so APIs that don't send
+  // CORS headers (Guardian/GNews) can still be checked; its error string carries
+  // the HTTP status for non-2xx responses.
+  if (inTauri()) {
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      await invoke<string>('http_get', { url, timeoutMs: 10000 });
+      return 'ok';
+    } catch (e) {
+      return /\b(401|403)\b/.test(String(e)) ? 'rejected' : 'unreachable';
+    }
+  }
+  try {
+    const res = await fetch(url);
+    if (res.status === 401 || res.status === 403) return 'rejected';
+    if (!res.ok) return 'unreachable';
+    return 'ok';
+  } catch {
+    return 'unreachable';
+  }
+}
 
 type TabKey = 'sources' | 'appearance' | 'algorithm';
 const TABS: { key: TabKey; label: string }[] = [
@@ -48,6 +91,7 @@ function KeyField({
   onChange,
   show,
   placeholder,
+  error,
 }: {
   id: string;
   label: string;
@@ -56,6 +100,7 @@ function KeyField({
   onChange: (v: string) => void;
   show: boolean;
   placeholder: string;
+  error?: ReactNode;
 }) {
   return (
     <section className="settings-field">
@@ -72,6 +117,7 @@ function KeyField({
           spellCheck={false}
         />
       </div>
+      {error}
     </section>
   );
 }
@@ -88,7 +134,8 @@ export function SettingsScreen({ onDone, onRetune }: { onDone: () => void; onRet
   const [theme, setTheme] = useState<ThemeName>(existing.theme ?? 'standard');
   const [showKey, setShowKey] = useState(false);
   const [tab, setTab] = useState<TabKey>('sources');
-  const [status, setStatus] = useState<KeyStatus>('idle');
+  const [testing, setTesting] = useState(false);
+  const [keyErrors, setKeyErrors] = useState<Partial<Record<KeyId, KeyError>>>({});
   const [ai, setAi] = useState(existing.ai ?? DEFAULT_AI);
   const active = activeModel(ai);
   const entries = apiEntries(ai);
@@ -118,31 +165,46 @@ export function SettingsScreen({ onDone, onRetune }: { onDone: () => void; onRet
     saveSettings({ ...loadSettings(), ai: nextAi });
   };
 
+  // Validate every key that has a value before saving. A rejected (bad) key
+  // blocks the save with an inline error; keys we merely couldn't reach don't
+  // block -- the "Save anyway" action persists them.
   const save = async () => {
-    const key = apiKey.trim();
-    if (!key) {
-      persist(); // empty = run keyless (also how a key is removed)
+    const checks: [KeyId, string][] = [];
+    if (apiKey.trim()) checks.push(['openalex', apiKey.trim()]);
+    if (guardianKey.trim()) checks.push(['guardian', guardianKey.trim()]);
+    if (nytKey.trim()) checks.push(['nyt', nytKey.trim()]);
+    if (gnewsKey.trim()) checks.push(['gnews', gnewsKey.trim()]);
+    if (checks.length === 0) {
+      persist(); // nothing to validate (also how keys are removed)
       return;
     }
-    setStatus('testing');
-    try {
-      const res = await fetch(
-        `https://api.openalex.org/works?per-page=1&select=id&api_key=${encodeURIComponent(key)}`,
-      );
-      if (res.status === 401 || res.status === 403) {
-        setStatus('rejected');
-        return;
-      }
-      if (!res.ok) {
-        setStatus('unreachable');
-        return;
-      }
-    } catch {
-      setStatus('unreachable');
-      return;
-    }
-    persist();
+    setTesting(true);
+    const results = await Promise.all(
+      checks.map(async ([id, k]) => [id, await testKey(KEY_TEST_URL[id](k))] as const),
+    );
+    setTesting(false);
+    const errs: Partial<Record<KeyId, KeyError>> = {};
+    for (const [id, r] of results) if (r !== 'ok') errs[id] = r;
+    setKeyErrors(errs);
+    if (Object.keys(errs).length === 0) persist();
   };
+
+  const errorValues = Object.values(keyErrors);
+  const anyRejected = errorValues.includes('rejected');
+  const anyUnreachable = errorValues.includes('unreachable');
+
+  const keyErrorNode = (id: KeyId): ReactNode => {
+    const e = keyErrors[id];
+    if (!e) return undefined;
+    return (
+      <p className="settings-error">
+        {e === 'rejected'
+          ? `${KEY_PROVIDER_NAME[id]} rejected this key — check it for typos. Not saved.`
+          : `Couldn’t reach ${KEY_PROVIDER_NAME[id]} to test the key (it may just be CORS in the web build). Use “Save anyway”, or try the desktop app.`}
+      </p>
+    );
+  };
+  const clearKeyError = (id: KeyId) => setKeyErrors((k) => ({ ...k, [id]: undefined }));
 
   return (
     <div className="settings-screen">
@@ -205,28 +267,14 @@ export function SettingsScreen({ onDone, onRetune }: { onDone: () => void; onRet
                   value={apiKey}
                   onChange={(e) => {
                     setApiKey(e.target.value);
-                    setStatus('idle');
+                    clearKeyError('openalex');
                   }}
                   placeholder="paste your key, or leave empty to run keyless"
                   autoComplete="off"
                   spellCheck={false}
                 />
               </div>
-              {status === 'rejected' && (
-                <p className="settings-error">
-                  OpenAlex rejected this key (401) — check it for typos. Not saved; a bad key would
-                  break every scholarly lookup.
-                </p>
-              )}
-              {status === 'unreachable' && (
-                <p className="settings-error">
-                  Couldn&rsquo;t reach OpenAlex to test the key.{' '}
-                  <button type="button" className="linkish" onClick={persist}>
-                    Save anyway
-                  </button>{' '}
-                  or try again in a moment.
-                </p>
-              )}
+              {keyErrorNode('openalex')}
             </section>
 
             <KeyField
@@ -253,9 +301,13 @@ export function SettingsScreen({ onDone, onRetune }: { onDone: () => void; onRet
                 </>
               }
               value={guardianKey}
-              onChange={setGuardianKey}
+              onChange={(v) => {
+                setGuardianKey(v);
+                clearKeyError('guardian');
+              }}
               show={showKey}
               placeholder="paste a Guardian key, or leave empty"
+              error={keyErrorNode('guardian')}
             />
 
             <KeyField
@@ -271,9 +323,13 @@ export function SettingsScreen({ onDone, onRetune }: { onDone: () => void; onRet
                 </>
               }
               value={nytKey}
-              onChange={setNytKey}
+              onChange={(v) => {
+                setNytKey(v);
+                clearKeyError('nyt');
+              }}
               show={showKey}
               placeholder="paste an NYT key, or leave empty"
+              error={keyErrorNode('nyt')}
             />
 
             <KeyField
@@ -288,9 +344,13 @@ export function SettingsScreen({ onDone, onRetune }: { onDone: () => void; onRet
                 </>
               }
               value={gnewsKey}
-              onChange={setGnewsKey}
+              onChange={(v) => {
+                setGnewsKey(v);
+                clearKeyError('gnews');
+              }}
               show={showKey}
               placeholder="paste a GNews token, or leave empty"
+              error={keyErrorNode('gnews')}
             />
 
             <KeyField
@@ -423,8 +483,13 @@ export function SettingsScreen({ onDone, onRetune }: { onDone: () => void; onRet
           >
             Cancel
           </button>
-          <button className="ob-next" onClick={save} disabled={status === 'testing'}>
-            {status === 'testing' ? 'Testing key…' : 'Save'}
+          {anyUnreachable && !anyRejected && (
+            <button className="chip" onClick={persist} disabled={testing}>
+              Save anyway
+            </button>
+          )}
+          <button className="ob-next" onClick={save} disabled={testing}>
+            {testing ? 'Testing keys…' : 'Save'}
           </button>
         </div>
       </div>
