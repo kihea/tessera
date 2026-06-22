@@ -201,6 +201,101 @@ function heuristicStudyMap(
   return { idea: query, branches: branches.slice(0, budget), builtBy: 'heuristic' };
 }
 
+// -- endless frontier: each wave a fresh set of angles ------------------------
+// At high reach the feed should never run dry. Each expansion wave gathers a
+// NEW set of perspectives: rotating angle queries (different every wave) plus
+// whatever concepts the weave itself has surfaced and not yet branched on. The
+// near-duplicate merge (mergeResearch) discards anything already seen, so a
+// wave that returns nothing new is the signal that the topic is truly mined out.
+
+/** Rotating angle queries by type -- the perpetual-novelty bank. */
+function angleTemplates(query: string, qType: QueryType): { kind: StudyBranch['kind']; concept: string; query: string }[] {
+  switch (qType) {
+    case 'person':
+      return [
+        { kind: 'frontier', concept: 'how contemporaries reacted', query: `reactions to ${query}` },
+        { kind: 'application', concept: 'in popular culture', query: `${query} in popular culture` },
+        { kind: 'context', concept: 'the world they lived in', query: `${query} era historical context` },
+        { kind: 'frontier', concept: 'later years', query: `${query} later life death` },
+        { kind: 'frontier', concept: 'how historians judge them', query: `historians on ${query}` },
+        { kind: 'adjacent', concept: 'their circle', query: `${query} contemporaries associates` },
+      ];
+    case 'event':
+      return [
+        { kind: 'frontier', concept: 'eyewitness accounts', query: `${query} eyewitness accounts` },
+        { kind: 'adjacent', concept: 'reaction abroad', query: `${query} international reaction` },
+        { kind: 'application', concept: 'long-term effects', query: `${query} long-term consequences` },
+        { kind: 'frontier', concept: 'myths and misconceptions', query: `${query} myths misconceptions` },
+        { kind: 'foundation', concept: 'the wider conditions', query: `${query} underlying conditions` },
+      ];
+    case 'philosophy':
+      return [
+        { kind: 'application', concept: 'put into practice', query: `${query} in practice examples` },
+        { kind: 'frontier', concept: 'its defenders', query: `defenses of ${query}` },
+        { kind: 'frontier', concept: 'modern debates', query: `${query} contemporary debate` },
+        { kind: 'foundation', concept: 'its key thinkers', query: `${query} key thinkers` },
+        { kind: 'adjacent', concept: 'neighboring schools', query: `schools related to ${query}` },
+      ];
+    default:
+      return [
+        { kind: 'application', concept: 'where it shows up', query: `applications of ${query}` },
+        { kind: 'frontier', concept: 'recent developments', query: `${query} recent developments` },
+        { kind: 'frontier', concept: 'common misconceptions', query: `${query} misconceptions` },
+        { kind: 'adjacent', concept: 'neighboring fields', query: `fields related to ${query}` },
+        { kind: 'context', concept: 'how it came about', query: `${query} origins development` },
+      ];
+  }
+}
+
+/**
+ * The next wave's study map: rotating angle queries (a different slice each
+ * wave) plus emergent concepts the weave has surfaced, all reach-gated and
+ * skipping anything already researched.
+ */
+export function buildExpansionMap(
+  query: string,
+  corpusConcepts: Concept[],
+  qType: QueryType,
+  radius: number,
+  used: Set<string>,
+  wave: number,
+): StudyMap {
+  const kinds = new Set(allowedKinds(radius));
+  const budget = branchBudget(radius);
+  const queryWords = new Set(query.toLowerCase().split(/\s+/));
+  const branches: StudyBranch[] = [];
+
+  // A rotating window over the angle bank so each wave opens different ground.
+  const bank = angleTemplates(query, qType);
+  for (let i = 0; i < bank.length; i++) {
+    const t = bank[(wave + i) % bank.length];
+    if (branches.length >= Math.ceil(budget / 2)) break;
+    if (!kinds.has(t.kind) || used.has(t.query.toLowerCase())) continue;
+    branches.push({ ...t, why: `Another angle on “${query}” — ${t.concept}.` });
+  }
+
+  // Emergent concepts: terms the weave keeps surfacing that have not yet been
+  // branched on get their own real material now.
+  const branchScore = (c: Concept) =>
+    c.weight * c.df * (c.id.includes(' ') || c.label === c.label.toUpperCase() ? 2.4 : 1);
+  const emergent = corpusConcepts
+    .filter((c) => c.important && !used.has(c.label.toLowerCase()))
+    .filter((c) => !c.id.split(' ').some((w) => queryWords.has(w)))
+    .filter((c) => c.id.includes(' ') || c.label === c.label.toUpperCase() || c.id.length >= 5)
+    .sort((a, b) => branchScore(b) - branchScore(a));
+  for (const c of emergent) {
+    if (branches.length >= budget) break;
+    branches.push({
+      kind: 'component',
+      concept: c.label,
+      query: c.label,
+      why: `“${c.label}” keeps surfacing as you read — gathering material that explains it in its own right.`,
+    });
+  }
+
+  return { idea: query, branches, builtBy: 'heuristic' };
+}
+
 /**
  * Build the study map: the configured model reads the seed material and
  * names the branches; any failure (no model, bad JSON, timeout) falls back

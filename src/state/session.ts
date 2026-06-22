@@ -22,8 +22,9 @@ import type {
 } from '../types';
 import { isGate } from '../types';
 import { research } from '../research/providers';
-import { buildStudyMap, mergeResearch, researchBranches } from '../research/expand';
+import { buildExpansionMap, buildStudyMap, mergeResearch, researchBranches } from '../research/expand';
 import { classifyQuery } from '../research/classify';
+import type { QueryType } from '../research/classify';
 import { queryTokens, urlsToMarkdownLinks } from '../research/net';
 import { defineTerm } from '../research/wiktionary';
 import { extractConcepts } from '../weave/terms';
@@ -63,6 +64,12 @@ export interface SessionStats {
 }
 
 const LOOKAHEAD = 4;
+// Endless frontier feed: at Frontier-level reach the feed keeps gathering fresh
+// angles instead of ending. Each wave grows the corpus; the near-duplicate merge
+// halts it naturally once a topic is mined out, and MAX_WAVES is a hard backstop.
+const FRONTIER_RADIUS = 0.7;
+const MAX_WAVES = 12;
+const WAVE_CAP_GROWTH = 80;
 
 function emptySignals(): CardSignals {
   return { dwellMs: 0, clipped: false, openedSource: false, checkpointInserted: false };
@@ -102,8 +109,19 @@ export function useSession(query: string) {
     label: DEPTH_LABEL[0],
   });
 
+  const [loadingMore, setLoadingMore] = useState(false); // an endless-frontier wave is gathering
+
   const loomRef = useRef<Loom | null>(null);
   const corpusRef = useRef<Corpus | null>(null); // cached so the dev panel can replay the feed without re-research
+  // -- endless frontier state -------------------------------------------------
+  const radiusRef = useRef(0.5);
+  const qTypeRef = useRef<QueryType>('topic');
+  const usedQueriesRef = useRef<Set<string>>(new Set()); // branch queries already gathered
+  const waveRef = useRef(0);
+  const expandingRef = useRef(false);
+  const exhaustedRef = useRef(false); // a wave returned nothing new -> topic mined out
+  const aliveRef = useRef(true); // false once this session unmounts / the query changes
+  const expandRef = useRef<null | (() => void)>(null);
   const weightsRef = useRef<WeaveWeights>(loadWeights());
   const banditRef = useRef<TypeBandit | null>(null);
   if (!banditRef.current) banditRef.current = new TypeBandit(loadBandit());
@@ -126,15 +144,28 @@ export function useSession(query: string) {
     while (cardsRef.current.length + add.length < target) {
       if (openGate()) break;
       const card = loom.next();
-      if (!card) {
+      if (!card || card.kind === 'end') {
+        // Endless frontier: at high reach, gather another wave of angles rather
+        // than ending. The wave runs async and pumps again when it lands.
+        if (
+          radiusRef.current >= FRONTIER_RADIUS &&
+          !exhaustedRef.current &&
+          !expandingRef.current &&
+          waveRef.current < MAX_WAVES &&
+          corpusRef.current
+        ) {
+          expandRef.current?.();
+          break; // hold here; do not append an end card
+        }
+        if (!card) {
+          doneRef.current = true;
+          break;
+        }
+        add.push(card); // genuine end of a bounded feed
         doneRef.current = true;
         break;
       }
       add.push(card);
-      if (card.kind === 'end') {
-        doneRef.current = true;
-        break;
-      }
     }
     if (add.length > 0) {
       cardsRef.current = [...cardsRef.current, ...add];
@@ -142,6 +173,84 @@ export function useSession(query: string) {
       setStage(loom.stage());
     }
   }, []);
+
+  // -- endless frontier: gather one more wave of angles, grow the corpus in
+  // place, and resume the feed. Best-effort: a wave that surfaces nothing new
+  // (everything deduped) marks the topic mined out and the feed ends normally.
+  const expandMore = useCallback(async () => {
+    const corpus = corpusRef.current;
+    const loom = loomRef.current;
+    if (!corpus || !loom || expandingRef.current || exhaustedRef.current) return;
+    expandingRef.current = true;
+    waveRef.current += 1;
+    setLoadingMore(true);
+    try {
+      const onProgress = (u: ProviderProgress) => {
+        if (!aliveRef.current) return;
+        setProgress((prev) => {
+          const next = prev.filter((p) => p.name !== u.name);
+          next.push(u);
+          return next.sort((a, b) => a.name.localeCompare(b.name));
+        });
+      };
+
+      const map = buildExpansionMap(
+        query,
+        corpus.concepts,
+        qTypeRef.current,
+        radiusRef.current,
+        usedQueriesRef.current,
+        waveRef.current,
+      );
+      for (const b of map.branches) usedQueriesRef.current.add(b.query.toLowerCase());
+      if (map.branches.length === 0) {
+        exhaustedRef.current = true;
+        return;
+      }
+
+      const reportedUrls = new Set(loadReports().map((r) => r.url));
+      const branchRes = await researchBranches(map, radiusRef.current, onProgress, qTypeRef.current);
+      if (!aliveRef.current) return;
+
+      const merged = mergeResearch(
+        { docs: [...corpus.docs.values()], passages: corpus.passages },
+        {
+          docs: branchRes.docs.filter((d) => !reportedUrls.has(d.url)),
+          passages: branchRes.passages,
+        },
+        corpus.passages.length + WAVE_CAP_GROWTH,
+      );
+      // Nothing survived the near-duplicate merge -> the topic is mined out.
+      if (merged.passages.length <= corpus.passages.length) {
+        exhaustedRef.current = true;
+        return;
+      }
+
+      // Re-weave over the grown corpus (wiktionary/formula passes skipped for
+      // speed -- waves widen perspective, the seed already grounded the terms).
+      const concepts = extractConcepts(merged.passages, query);
+      annotateDefinitions(merged.passages, concepts);
+      const docMap = new Map(merged.docs.map((d) => [d.id, d]));
+      annotateDepth(merged.passages, docMap, concepts);
+      corpus.docs = docMap;
+      corpus.passages = merged.passages;
+      corpus.concepts = concepts;
+      corpus.connections = buildConnections(merged.passages, concepts);
+      loom.extend();
+      if (aliveRef.current) setCorpus({ ...corpus });
+    } catch {
+      // Leave exhausted untouched: a transient failure can retry next wave.
+    } finally {
+      expandingRef.current = false;
+      if (aliveRef.current) {
+        setLoadingMore(false);
+        pumpTo(cardsRef.current.length + LOOKAHEAD);
+      }
+    }
+  }, [query, pumpTo]);
+  useEffect(() => {
+    expandRef.current = expandMore;
+  }, [expandMore]);
 
   // Rebuild the Loom over the CACHED corpus with new weights and replay the feed
   // from the top -- no re-research, no model, no re-weave. Powers the dev tuning
@@ -209,6 +318,13 @@ export function useSession(query: string) {
     cardsRef.current = [];
     completedGatesRef.current = new Set();
     doneRef.current = false;
+    // reset endless-frontier state for the new query
+    aliveRef.current = true;
+    waveRef.current = 0;
+    expandingRef.current = false;
+    exhaustedRef.current = false;
+    usedQueriesRef.current = new Set();
+    setLoadingMore(false);
 
     (async () => {
       const onProgress = (update: { name: string; status: 'pending' | 'ok' | 'fail'; passages: number }) => {
@@ -245,10 +361,14 @@ export function useSession(query: string) {
       // What KIND of thing is this? Person / event / philosophy / topic steers
       // which angles the study map reaches for (research/classify.ts).
       const qType = classifyQuery(query, passages, seedDocMap);
+      radiusRef.current = radius;
+      qTypeRef.current = qType;
       if (aiConfigured()) setMapGenerating(true); // heuristic returns instantly — no spinner
       const studyMap = await buildStudyMap(query, passages, seedDocMap, seedConcepts, radius, qType, (p) => {
         if (!cancelled) setModelLoad(p);
       });
+      // Remember what we've already gathered so endless-frontier waves open new ground.
+      for (const b of studyMap.branches) usedQueriesRef.current.add(b.query.toLowerCase());
       if (cancelled) return;
       setMapGenerating(false);
       setModelLoad(null); // model work is done; clear the bar for branch research
@@ -339,6 +459,7 @@ export function useSession(query: string) {
 
     return () => {
       cancelled = true;
+      aliveRef.current = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [slug]);
@@ -514,6 +635,7 @@ export function useSession(query: string) {
     tuneWeights,
     corpus,
     cards,
+    loadingMore,
     completedGates,
     skippedGates,
     reportedDocs,

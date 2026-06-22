@@ -205,6 +205,20 @@ export class Loom {
     this.wovenCount += 1;
   }
 
+  /**
+   * Endless frontier: the session has grown the corpus in place (new passages,
+   * docs, concepts, connections) and wants the feed to continue. All per-id
+   * loom state stays valid -- pickPassage reads the corpus live -- so this just
+   * lifts the end guard so planning resumes into the new material. Returns
+   * whether any unseen passage now exists to continue with.
+   */
+  extend(): boolean {
+    if (this.lastKind === 'end') this.lastKind = 'passage';
+    return this.corpus.passages.some(
+      (p) => !this.emitted.has(p.id) && !this.excludedDocs.has(p.docId),
+    );
+  }
+
   /** The learner reported this source -- its remaining excerpts never surface. */
   excludeDoc(docId: string): void {
     this.excludedDocs.add(docId);
@@ -761,7 +775,7 @@ export class Loom {
         viaLabels: viaConcepts.map((c) => c.label),
         sourceTitle: otherDoc.title,
       });
-      if (threads.length >= 3) break;
+      if (threads.length >= 4) break;
     }
 
     // When the ladder steps up a rung, say so -- progress should be felt.
