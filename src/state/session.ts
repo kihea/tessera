@@ -43,6 +43,7 @@ import type { WebllmProgress } from '../ai/webllm';
 import {
   addReport,
   DEFAULT_PREFS,
+  devFlag,
   loadBandit,
   loadNotes,
   loadPrefs,
@@ -161,6 +162,7 @@ export function useSession(query: string, presetCorpus?: Corpus) {
         // than ending. The wave runs async and pumps again when it lands.
         if (
           radiusRef.current >= FRONTIER_RADIUS &&
+          devFlag('endlessFrontier') &&
           !exhaustedRef.current &&
           !expandingRef.current &&
           waveRef.current < MAX_WAVES &&
@@ -421,7 +423,7 @@ export function useSession(query: string, presetCorpus?: Corpus) {
       const seedDocMap = new Map(docs.map((d) => [d.id, d]));
       // What KIND of thing is this? Person / event / philosophy / topic steers
       // which angles the study map reaches for (research/classify.ts).
-      const qType = classifyQuery(query, passages, seedDocMap);
+      const qType = devFlag('entityAware') ? classifyQuery(query, passages, seedDocMap) : 'topic';
       radiusRef.current = radius;
       qTypeRef.current = qType;
       if (aiConfigured()) setMapGenerating(true); // heuristic returns instantly — no spinner

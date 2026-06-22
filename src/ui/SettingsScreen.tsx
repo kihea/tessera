@@ -11,7 +11,7 @@
 
 import { useState } from 'react';
 import type { ReactNode } from 'react';
-import type { AiModel, ThemeName } from '../state/storage';
+import type { AiModel, DevFlags, ThemeName } from '../state/storage';
 import {
   activeModel,
   apiEntries,
@@ -75,11 +75,12 @@ async function testKey(url: string): Promise<'ok' | KeyError> {
   }
 }
 
-type TabKey = 'sources' | 'appearance' | 'algorithm';
+type TabKey = 'sources' | 'appearance' | 'algorithm' | 'developer';
 const TABS: { key: TabKey; label: string }[] = [
   { key: 'sources', label: 'Sources' },
   { key: 'appearance', label: 'Appearance' },
   { key: 'algorithm', label: 'Algorithm' },
+  { key: 'developer', label: 'Developer' },
 ];
 
 /** A plain optional API-key field (used by all keyed providers but OpenAlex,
@@ -134,6 +135,7 @@ export function SettingsScreen({ onDone, onRetune }: { onDone: () => void; onRet
   const [gnewsKey, setGnewsKey] = useState(existing.gnewsApiKey ?? '');
   const [theme, setTheme] = useState<ThemeName>(existing.theme ?? 'standard');
   const [autoGraph, setAutoGraph] = useState(existing.autoGraph !== false);
+  const [dev, setDev] = useState<DevFlags>(existing.dev ?? {});
   const [graphCleared, setGraphCleared] = useState(false);
   const [showKey, setShowKey] = useState(false);
   const [tab, setTab] = useState<TabKey>('sources');
@@ -154,6 +156,7 @@ export function SettingsScreen({ onDone, onRetune }: { onDone: () => void; onRet
       gnewsApiKey: gnewsKey.trim() || undefined,
       theme,
       autoGraph,
+      dev,
       ai,
     });
     onDone();
@@ -474,13 +477,54 @@ export function SettingsScreen({ onDone, onRetune }: { onDone: () => void; onRet
               </p>
               <HowYouLearn onRetune={onRetune} />
             </section>
+          </>
+        )}
+
+        {tab === 'developer' && (
+          <>
+            <div className="settings-subhead">
+              <p className="settings-hint">
+                Experimental features, on by default — toggle to compare behavior. Stored on this
+                device. Deeper weave-weight tuning lives in the in-session dev panel (development
+                builds; press Esc to open it).
+              </p>
+            </div>
+
+            <section className="settings-field">
+              <label>Experimental gathering</label>
+              <label className="settings-check">
+                <input
+                  type="checkbox"
+                  checked={dev.endlessFrontier !== false}
+                  onChange={(e) => setDev({ ...dev, endlessFrontier: e.target.checked })}
+                />
+                <span>Endless frontier feed — keep gathering new angles at Frontier reach</span>
+              </label>
+              <label className="settings-check">
+                <input
+                  type="checkbox"
+                  checked={dev.entityAware !== false}
+                  onChange={(e) => setDev({ ...dev, entityAware: e.target.checked })}
+                />
+                <span>Entity-aware gathering — steer by person / event / philosophy</span>
+              </label>
+              <label className="settings-check">
+                <input
+                  type="checkbox"
+                  checked={dev.graphProvider !== false}
+                  onChange={(e) => setDev({ ...dev, graphProvider: e.target.checked })}
+                />
+                <span>Pull the knowledge graph in as a source alongside the live providers</span>
+              </label>
+            </section>
 
             <section className="settings-field">
               <label>Knowledge graph</label>
               <p className="settings-hint">
-                A.woke builds one persistent graph of everything you research — ideas as nodes,
-                shared concepts as the links between them — and pulls it alongside your other
-                sources. Excerpts are stored verbatim; your notes join it as your own layer.
+                A.woke builds one persistent graph of everything you research — ideas as nodes
+                (forms vs attributes), shared concepts as degreed links between them — browsable at
+                the Knowledge graph screen. Excerpts are stored verbatim; your notes join it as your
+                own layer.
               </p>
               <label className="settings-check">
                 <input

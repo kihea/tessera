@@ -21,6 +21,7 @@ import { searchBakedVideos } from './bakedVideos';
 import { dropLeadingMeta } from './net';
 import { filterToDominantLanguage } from './lang';
 import { graphProviderSearch } from '../state/graphStore';
+import { devFlag } from '../state/storage';
 
 export interface ResearchResult {
   docs: SourceDoc[];
@@ -57,10 +58,10 @@ export async function research(query: string, onProgress: ProgressFn): Promise<R
     // Your own knowledge graph, pulled alongside the live sources: verbatim
     // material you've already gathered on neighboring ideas. Early in the order
     // so curated, connected material is preferred when it duplicates a fresh hit.
-    {
-      name: 'Your knowledge graph',
-      run: () => graphProviderSearch(query),
-    },
+    // (Experimental -- toggleable in Settings → Developer.)
+    ...(devFlag('graphProvider')
+      ? [{ name: 'Your knowledge graph', run: () => graphProviderSearch(query) }]
+      : []),
     {
       name: 'Wikibooks',
       run: () => searchWiki(query, 'en.wikibooks.org', 'textbook', 'Wikibooks', 2, 7),

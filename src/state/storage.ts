@@ -248,6 +248,24 @@ export interface AppSettings {
   theme?: ThemeName;
   /** Auto-fold each session into the knowledge graph (default on). */
   autoGraph?: boolean;
+  /** Experimental feature toggles (Developer tab); all default ON. */
+  dev?: DevFlags;
+}
+
+/** Experimental feature flags, surfaced in the Settings → Developer tab. Each
+ *  is undefined-means-on, so the app ships with everything enabled. */
+export interface DevFlags {
+  /** Keep gathering fresh angles at Frontier reach (endless feed). */
+  endlessFrontier?: boolean;
+  /** Steer gathering by query type (person / event / philosophy). */
+  entityAware?: boolean;
+  /** Pull the knowledge graph in as a source alongside the live providers. */
+  graphProvider?: boolean;
+}
+
+/** Read one experimental flag; defaults to ON unless explicitly disabled. */
+export function devFlag(key: keyof DevFlags): boolean {
+  return loadSettings().dev?.[key] !== false;
 }
 
 export function loadSettings(): AppSettings {
