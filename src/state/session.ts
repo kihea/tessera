@@ -76,7 +76,14 @@ function emptySignals(): CardSignals {
   return { dwellMs: 0, clipped: false, openedSource: false, checkpointInserted: false };
 }
 
-export function useSession(query: string) {
+/**
+ * The feed for a topic. Normally it researches the topic live; when a
+ * `presetCorpus` is given (a subgraph rehydrated from the knowledge graph) it
+ * skips all research/weaving and plays that corpus directly, reusing the entire
+ * feed engine (gates, clips, notes, bandit, stage). Existing callers pass no
+ * preset and behave exactly as before.
+ */
+export function useSession(query: string, presetCorpus?: Corpus) {
   const slug = slugify(query);
   const [phase, setPhase] = useState<Phase>('researching');
   const [progress, setProgress] = useState<ProviderProgress[]>([]);
@@ -337,7 +344,7 @@ export function useSession(query: string) {
   // -- boot pipeline ----------------------------------------------------------
   useEffect(() => {
     let cancelled = false;
-    rememberTopic(query, slug);
+    if (!presetCorpus) rememberTopic(query, slug); // graph-feed topics aren't "recents"
     setPhase('researching');
     setProgress([]);
     setModelLoad(null);
@@ -358,6 +365,27 @@ export function useSession(query: string) {
     exhaustedRef.current = false;
     usedQueriesRef.current = new Set();
     setLoadingMore(false);
+
+    // Knowledge-graph feed: play a rehydrated subgraph directly, no research.
+    if (presetCorpus) {
+      const prefs = loadPrefs() ?? DEFAULT_PREFS;
+      const loom = new Loom(
+        presetCorpus,
+        banditRef.current!,
+        { checkpointEvery: prefs.checkpointEvery, opening: prefs.opening },
+        weightsRef.current,
+      );
+      loomRef.current = loom;
+      corpusRef.current = presetCorpus;
+      radiusRef.current = 0; // fixed corpus -> no endless-frontier expansion
+      setCorpus(presetCorpus);
+      pumpTo(LOOKAHEAD);
+      setPhase(presetCorpus.passages.length < 1 ? 'empty' : 'ready');
+      return () => {
+        cancelled = true;
+        aliveRef.current = false;
+      };
+    }
 
     (async () => {
       const onProgress = (update: { name: string; status: 'pending' | 'ok' | 'fail'; passages: number }) => {

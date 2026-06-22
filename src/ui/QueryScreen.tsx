@@ -16,9 +16,11 @@ const EXAMPLES = [
 export function QueryScreen({
   onSubmit,
   onSettings,
+  onOpenGraph,
 }: {
   onSubmit: (query: string) => void;
   onSettings: () => void;
+  onOpenGraph: () => void;
 }) {
   const [value, setValue] = useState('');
   const [recents, setRecents] = useState(() => loadTopics());
@@ -44,6 +46,13 @@ export function QueryScreen({
         title="Settings — connection model, API keys, and how you learn"
       >
         ⚙ Settings
+      </button>
+      <button
+        className="graph-link"
+        onClick={onOpenGraph}
+        title="Your knowledge graph — everything you've researched, connected"
+      >
+        ◍ Knowledge graph
       </button>
 
       <div className="composer">
