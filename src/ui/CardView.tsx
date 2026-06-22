@@ -397,7 +397,7 @@ function CheckpointView({
         <button className="cardref" onClick={() => onJump(findCardId(session, card.cardRefB))}>
           {card.cardRefB}
         </button>{' '}
-        both pull on <em>{card.labelA}</em> and <em>{card.labelB}</em>. Tessera will not connect them
+        both pull on <em>{card.labelA}</em> and <em>{card.labelB}</em>. A.woke will not connect them
         for you — that synthesis is the learning.
       </p>
       <div className="quote-pair">

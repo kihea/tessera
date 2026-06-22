@@ -196,15 +196,27 @@ export async function researchBranches(
   onProgress: ProgressFn,
 ): Promise<BranchResearch> {
   const deepKinds = new Set(['context', 'mechanism', 'frontier', 'foundation']);
+  // Crawl depth tracks reach (the same dial that decides "branch out"). DEEP
+  // DIVE reads each branch source far further -- more of its pages and more
+  // passages from each, plus papers for the inward kinds -- so a few threads
+  // are mastered in depth. FRONTIER spreads thinner across many branches but
+  // pulls papers widely, for angles rather than depth.
+  const deepDive = radius < 0.4;
+  const branchPages = deepDive ? 2 : 1;
+  const branchPassages = deepDive ? 9 : 5;
+  const paperCount = deepDive ? 2 : 1;
   const results = await Promise.all(
     map.branches.map(async (branch): Promise<BranchResearch> => {
       const name = `↳ ${branch.concept}`;
       onProgress({ name, status: 'pending', passages: 0 });
       try {
+        // Pull papers for the inward/foundational kinds when diving deep, and
+        // broadly once reach climbs (frontier wants every scholarly angle).
+        const wantPapers = (deepKinds.has(branch.kind) && radius >= 0.34) || radius >= 0.6;
         const [wiki, papers] = await Promise.all([
-          searchWiki(branch.query, 'en.wikipedia.org', 'encyclopedia', 'Wikipedia', 1, 5),
-          deepKinds.has(branch.kind) && radius >= 0.34
-            ? searchOpenAlex(branch.query, 1)
+          searchWiki(branch.query, 'en.wikipedia.org', 'encyclopedia', 'Wikipedia', branchPages, branchPassages),
+          wantPapers
+            ? searchOpenAlex(branch.query, paperCount)
             : Promise.resolve({ docs: [], passages: [] }),
         ]);
         const docs = [...wiki.docs, ...papers.docs];

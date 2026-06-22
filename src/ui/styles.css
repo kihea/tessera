@@ -457,6 +457,17 @@ a {
   line-height: 1.55;
 }
 
+.settings-group {
+  margin: 34px 0 4px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--line, rgba(255, 255, 255, 0.1));
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
 .settings-field {
   margin-top: 26px;
 }

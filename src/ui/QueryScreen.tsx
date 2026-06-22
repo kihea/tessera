@@ -48,11 +48,11 @@ export function QueryScreen({
 
       <div className="composer">
         <div className="brand">
-          <span className="brand-mark">◳</span> Tessera
+          <span className="brand-mark">◳</span> A.woke
         </div>
         <h1 className="composer-title">Learn from the sources themselves.</h1>
         <p className="composer-sub">
-          Name a topic. Tessera gathers real material &mdash; encyclopedias, textbooks, papers,
+          Name a topic. A.woke gathers real material &mdash; encyclopedias, textbooks, papers,
           books &mdash; and weaves the <em>verbatim</em> excerpts into a feed. You read the sources;
           you write the synthesis.
         </p>

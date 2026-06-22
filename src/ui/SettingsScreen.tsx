@@ -91,14 +91,16 @@ export function SettingsScreen({ onDone, onRetune }: { onDone: () => void; onRet
     <div className="settings-screen">
       <div className="settings-panel">
         <div className="brand">
-          <span className="brand-mark">◳</span> Tessera
+          <span className="brand-mark">◳</span> A.woke
         </div>
-        <h1>Connection settings</h1>
+        <h1>Settings</h1>
         <p className="settings-note">
-          Tessera runs entirely in your browser against open APIs and works with no keys at all.
+          A.woke runs entirely in your browser against open APIs and works with no keys at all.
           Anything you enter here is stored only in this browser&rsquo;s local storage and sent only
           to the provider it belongs to — never bundled with the app, never to anyone else.
         </p>
+
+        <h2 className="settings-group">Sources &amp; API keys</h2>
 
         <section className="settings-field">
           <label htmlFor="yt-key">YouTube Data API key</label>
@@ -194,6 +196,25 @@ export function SettingsScreen({ onDone, onRetune }: { onDone: () => void; onRet
         </section>
 
         <section className="settings-field">
+          <label htmlFor="oa-mail">Contact email for the polite pool</label>
+          <p className="settings-hint">
+            Optional, no signup needed. OpenAlex gives keyless requests that include a contact
+            email (&ldquo;polite pool&rdquo;) faster and more reliable service.
+          </p>
+          <input
+            id="oa-mail"
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="you@example.com"
+            autoComplete="off"
+            spellCheck={false}
+          />
+        </section>
+
+        <h2 className="settings-group">Model &amp; learning</h2>
+
+        <section className="settings-field">
           <label>Connection model</label>
           <p className="settings-hint">
             Chosen from the picker on the home screen — the built-in heuristic, a bundled
@@ -237,26 +258,9 @@ export function SettingsScreen({ onDone, onRetune }: { onDone: () => void; onRet
         </section>
 
         <section className="settings-field">
-          <label htmlFor="oa-mail">Contact email for the polite pool</label>
-          <p className="settings-hint">
-            Optional, no signup needed. OpenAlex gives keyless requests that include a contact
-            email (&ldquo;polite pool&rdquo;) faster and more reliable service.
-          </p>
-          <input
-            id="oa-mail"
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="you@example.com"
-            autoComplete="off"
-            spellCheck={false}
-          />
-        </section>
-
-        <section className="settings-field">
           <label>How you learn</label>
           <p className="settings-hint">
-            Tessera&rsquo;s evolving picture of how you retain: warm-started by the startup
+            A.woke&rsquo;s evolving picture of how you retain: warm-started by the startup
             questions, then reshaped by what you actually clip, open, weave, and recall, and shown
             openly so you can retune the starting answers any time.
           </p>

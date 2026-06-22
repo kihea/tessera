@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { REACH_LEVELS, nearestReach } from './labels';
 
-// Branch-out reach as a dropdown that mirrors the model selector, for UX
-// cohesion: the trigger shows the current stop (Focused -> Far-reaching), the
-// popover lists all five with their blurbs. The engine still reads the 0..1
-// radius each stop carries. The "↳" glyph is the same one the research view
-// uses to mark a branch.
+// Reach as a dropdown that mirrors the model selector, for UX cohesion: the
+// trigger shows the current stop (Deep dive -> Frontier, the two sides of
+// mastery), the popover lists all five with their blurbs. The engine still
+// reads the 0..1 radius each stop carries. The "↳" glyph is the same one the
+// research view uses to mark a branch.
 
 export function ReachSelector({
   radius,
@@ -42,7 +42,7 @@ export function ReachSelector({
         aria-haspopup="dialog"
         aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
-        title={`Branch-out reach — ${active.blurb}`}
+        title={`Reach — ${active.blurb}`}
       >
         <span className="mt-diamond">↳</span>
         <span className="mt-name">{active.label}</span>
