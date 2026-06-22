@@ -10,8 +10,9 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import type { Corpus } from '../types';
 import { useSession } from '../state/session';
-import { loadGraph, searchGraph, subgraphToCorpus } from '../state/graphStore';
+import { loadGraph, notesForConcepts, searchGraph, subgraphToCorpus } from '../state/graphStore';
 import type { KnowledgeGraph } from '../state/graphStore';
+import { slugify } from '../state/storage';
 import { WeaveMap } from './WeaveMap';
 import { FeedPane } from './FeedPane';
 import { NotesPane } from './NotesPane';
@@ -67,6 +68,18 @@ export function GraphScreen({
     return top?.label ?? null;
   }, [graph, sub, topic]);
 
+  // The user's own notes that touch this region -- their curated layer, woven
+  // in alongside the sources. Excludes the current topic (its notes show in the
+  // feed's own notes pane).
+  const regionNotes = useMemo(() => {
+    if (!graph) return [];
+    const ids = sub
+      ? sub.conceptIds
+      : [...graph.concepts].sort((a, b) => b.df - a.df).slice(0, 18).map((c) => c.id);
+    const here = topic ? slugify(topic) : '';
+    return notesForConcepts(graph, ids).filter((n) => n.slug !== here);
+  }, [graph, sub, topic]);
+
   const submit = (e: FormEvent) => {
     e.preventDefault();
     const q = input.trim();
@@ -107,6 +120,27 @@ export function GraphScreen({
           <button type="submit">Search</button>
         </form>
       </header>
+
+      {regionNotes.length > 0 && (
+        <div className="graph-notes">
+          <h2>Your notes across these ideas</h2>
+          <div className="graph-notes-row">
+            {regionNotes.slice(0, 6).map((n) => (
+              <button
+                key={n.id}
+                className="graph-note"
+                onClick={() => onOpenTopic(n.slug.replace(/-/g, ' '))}
+                title="Reopen this topic"
+              >
+                <span className="graph-note-topic">{n.slug.replace(/-/g, ' ')}</span>
+                <span className="graph-note-text">
+                  {n.text.replace(/^#.*$/m, '').replace(/\s+/g, ' ').trim().slice(0, 200)}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {!graph ? (
         <div className="graph-empty">Loading your knowledge graph…</div>

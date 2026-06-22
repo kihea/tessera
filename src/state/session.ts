@@ -25,7 +25,7 @@ import { research } from '../research/providers';
 import { buildExpansionMap, buildStudyMap, mergeResearch, researchBranches } from '../research/expand';
 import { classifyQuery } from '../research/classify';
 import type { QueryType } from '../research/classify';
-import { addContribution, excludeDocFromGraph } from './graphStore';
+import { addContribution, excludeDocFromGraph, upsertNote } from './graphStore';
 import { queryTokens, urlsToMarkdownLinks } from '../research/net';
 import { defineTerm } from '../research/wiktionary';
 import { extractConcepts } from '../weave/terms';
@@ -576,6 +576,27 @@ export function useSession(query: string, presetCorpus?: Corpus) {
     const timer = setTimeout(() => saveNotes(slug, notes), 400);
     return () => clearTimeout(timer);
   }, [slug, notes]);
+
+  // Fold the user's notes into the knowledge graph as their own curated layer,
+  // linked to the ideas this session is about. Debounced longer than the local
+  // save since it touches the whole graph; skipped while the notes are still
+  // just the bare header.
+  useEffect(() => {
+    if (notes.replace(/\s+/g, ' ').trim() === `# ${query}`.trim()) return;
+    const timer = setTimeout(() => {
+      const corpus = corpusRef.current;
+      if (!corpus) return;
+      const conceptIds = [...corpus.concepts]
+        .filter((c) => c.important)
+        .sort((a, b) => b.df - a.df)
+        .slice(0, 24)
+        .map((c) => c.id);
+      graphChainRef.current = graphChainRef.current
+        .then(() => upsertNote({ slug, text: notes, conceptIds }))
+        .catch(() => {});
+    }, 2500);
+    return () => clearTimeout(timer);
+  }, [slug, notes, query]);
 
   const appendToNotes = useCallback((md: string) => {
     setNotes((n) => `${n.trimEnd()}\n\n${md}\n`);
