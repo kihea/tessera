@@ -25,6 +25,7 @@ import { research } from '../research/providers';
 import { buildExpansionMap, buildStudyMap, mergeResearch, researchBranches } from '../research/expand';
 import { classifyQuery } from '../research/classify';
 import type { QueryType } from '../research/classify';
+import { addContribution, excludeDocFromGraph } from './graphStore';
 import { queryTokens, urlsToMarkdownLinks } from '../research/net';
 import { defineTerm } from '../research/wiktionary';
 import { extractConcepts } from '../weave/terms';
@@ -122,6 +123,10 @@ export function useSession(query: string) {
   const exhaustedRef = useRef(false); // a wave returned nothing new -> topic mined out
   const aliveRef = useRef(true); // false once this session unmounts / the query changes
   const expandRef = useRef<null | (() => void)>(null);
+  // Serialize knowledge-graph writes so overlapping folds (ready + each wave)
+  // never race on the stored graph.
+  const graphChainRef = useRef<Promise<void>>(Promise.resolve());
+  const foldRef = useRef<null | (() => void)>(null);
   const weightsRef = useRef<WeaveWeights>(loadWeights());
   const banditRef = useRef<TypeBandit | null>(null);
   if (!banditRef.current) banditRef.current = new TypeBandit(loadBandit());
@@ -238,6 +243,7 @@ export function useSession(query: string) {
       corpus.connections = buildConnections(merged.passages, concepts);
       loom.extend();
       if (aliveRef.current) setCorpus({ ...corpus });
+      foldRef.current?.(); // fold the freshly-widened corpus into the graph
     } catch {
       // Leave exhausted untouched: a transient failure can retry next wave.
     } finally {
@@ -251,6 +257,33 @@ export function useSession(query: string) {
   useEffect(() => {
     expandRef.current = expandMore;
   }, [expandMore]);
+
+  // -- knowledge graph: fold this session's woven corpus into the persistent
+  // graph (auto by default; the home/settings toggle can turn it off, in which
+  // case `addToGraph` does it on demand). Reuses the already-built corpus -- no
+  // re-research, no re-weave. Writes are serialized via graphChainRef.
+  const foldIntoGraph = useCallback(
+    (force = false) => {
+      const corpus = corpusRef.current;
+      if (!corpus) return;
+      if (!force && loadSettings().autoGraph === false) return;
+      const contribution = {
+        query,
+        docs: [...corpus.docs.values()],
+        passages: corpus.passages,
+        concepts: corpus.concepts,
+        formulas: corpus.formulas,
+      };
+      graphChainRef.current = graphChainRef.current
+        .then(() => addContribution(contribution))
+        .catch(() => {});
+    },
+    [query],
+  );
+  const addToGraph = useCallback(() => foldIntoGraph(true), [foldIntoGraph]);
+  useEffect(() => {
+    foldRef.current = () => foldIntoGraph();
+  }, [foldIntoGraph]);
 
   // Rebuild the Loom over the CACHED corpus with new weights and replay the feed
   // from the top -- no re-research, no model, no re-weave. Powers the dev tuning
@@ -455,6 +488,7 @@ export function useSession(query: string) {
       setCorpus(built);
       pumpTo(LOOKAHEAD);
       setPhase('ready');
+      foldIntoGraph(); // auto-fold this session's weave into the knowledge graph
     })();
 
     return () => {
@@ -614,6 +648,10 @@ export function useSession(query: string) {
     addReport(card.doc.url, card.doc.title);
     loomRef.current?.excludeDoc(card.doc.id);
     setReportedDocs((prev) => new Set(prev).add(card.doc.id));
+    // A reported source also leaves the persistent graph and stays out of it.
+    graphChainRef.current = graphChainRef.current
+      .then(() => excludeDocFromGraph(card.doc.url))
+      .catch(() => {});
   }, []);
 
   const toggleMuteConcept = useCallback((conceptId: string) => {
@@ -655,6 +693,7 @@ export function useSession(query: string) {
     skipGate,
     reportSource,
     toggleMuteConcept,
+    addToGraph,
   };
 }
 

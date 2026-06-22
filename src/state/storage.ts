@@ -246,6 +246,8 @@ export interface AppSettings {
   ai?: AiSettings;
   /** Visual theme (optional, defaults to 'standard'). */
   theme?: ThemeName;
+  /** Auto-fold each session into the knowledge graph (default on). */
+  autoGraph?: boolean;
 }
 
 export function loadSettings(): AppSettings {

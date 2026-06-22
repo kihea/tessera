@@ -24,6 +24,7 @@ import {
   THEMES,
 } from '../state/storage';
 import { webllmSupported } from '../ai/webllm';
+import { clearGraph } from '../state/graphStore';
 import { extLinkProps } from './external';
 import { DownloadAppButton } from './DownloadAppButton';
 import type { SourceType } from '../types';
@@ -132,6 +133,8 @@ export function SettingsScreen({ onDone, onRetune }: { onDone: () => void; onRet
   const [nytKey, setNytKey] = useState(existing.nytApiKey ?? '');
   const [gnewsKey, setGnewsKey] = useState(existing.gnewsApiKey ?? '');
   const [theme, setTheme] = useState<ThemeName>(existing.theme ?? 'standard');
+  const [autoGraph, setAutoGraph] = useState(existing.autoGraph !== false);
+  const [graphCleared, setGraphCleared] = useState(false);
   const [showKey, setShowKey] = useState(false);
   const [tab, setTab] = useState<TabKey>('sources');
   const [testing, setTesting] = useState(false);
@@ -150,6 +153,7 @@ export function SettingsScreen({ onDone, onRetune }: { onDone: () => void; onRet
       nytApiKey: nytKey.trim() || undefined,
       gnewsApiKey: gnewsKey.trim() || undefined,
       theme,
+      autoGraph,
       ai,
     });
     onDone();
@@ -469,6 +473,33 @@ export function SettingsScreen({ onDone, onRetune }: { onDone: () => void; onRet
                 shown openly so you can retune the starting answers any time.
               </p>
               <HowYouLearn onRetune={onRetune} />
+            </section>
+
+            <section className="settings-field">
+              <label>Knowledge graph</label>
+              <p className="settings-hint">
+                A.woke builds one persistent graph of everything you research — ideas as nodes,
+                shared concepts as the links between them — and pulls it alongside your other
+                sources. Excerpts are stored verbatim; your notes join it as your own layer.
+              </p>
+              <label className="settings-check">
+                <input
+                  type="checkbox"
+                  checked={autoGraph}
+                  onChange={(e) => setAutoGraph(e.target.checked)}
+                />
+                <span>Automatically fold each session into the graph</span>
+              </label>
+              <button
+                type="button"
+                className="chip"
+                onClick={async () => {
+                  await clearGraph();
+                  setGraphCleared(true);
+                }}
+              >
+                {graphCleared ? 'Graph cleared' : 'Clear knowledge graph'}
+              </button>
             </section>
           </>
         )}

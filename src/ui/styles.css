@@ -570,6 +570,21 @@ a {
   flex: 1;
 }
 
+.settings-check {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 8px 0 14px;
+  font-size: 14px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.settings-check input {
+  width: auto;
+  margin: 0;
+}
+
 .settings-field {
   margin-top: 26px;
 }
