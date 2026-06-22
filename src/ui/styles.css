@@ -1,5 +1,7 @@
-/* Tessera — dark scholarly theme. Excerpts read in serif (they are quotations
-   from real sources); the app chrome stays in the UI sans stack. */
+/* A.woke — the palette lives in CSS variables so themes (Standard, Library of
+   Alexandria, Terminal) override colors/fonts without touching layout. Excerpts
+   read in serif (they are quotations from real sources); chrome uses the sans
+   stack. See state/storage.ts THEMES and [data-theme=...] blocks below. */
 
 :root {
   --bg: #0d1117;
@@ -28,6 +30,67 @@
 
   --sans: 'Segoe UI', system-ui, -apple-system, sans-serif;
   --serif: Georgia, 'Iowan Old Style', 'Times New Roman', serif;
+}
+
+/* ---- themes: override the palette; structure/layout stay shared --------- */
+
+/* Library of Alexandria — warm parchment, sepia ink, a classical reading room. */
+:root[data-theme='alexandria'] {
+  color-scheme: light;
+  --bg: #f1e6cd;
+  --panel: #efe1c2;
+  --panel2: #e7d6b1;
+  --border: #cdba8e;
+  --text: #3a2c18;
+  --muted: #6f5c3c;
+  --faint: #9a8557;
+  --accent: #9a571f;
+  --mark: rgba(154, 87, 31, 0.18);
+
+  --c-encyclopedia: #1f6f8b;
+  --c-textbook: #3f7d3a;
+  --c-paper: #7a4fb0;
+  --c-discussion: #b5651d;
+  --c-book: #9a6a16;
+  --c-reference: #1f8a8a;
+  --c-news: #6f5c3c;
+  --c-primary: #b5651d;
+  --c-checkpoint: #b03a5b;
+  --c-check: #3f7d3a;
+  --c-formula: #7a4fb0;
+  --c-video: #b03a3a;
+  --thread-line: rgba(154, 87, 31, 0.5);
+}
+
+/* Terminal — black screen, phosphor green, monospace. */
+:root[data-theme='terminal'] {
+  color-scheme: dark;
+  --bg: #050806;
+  --panel: #081109;
+  --panel2: #0b1a0d;
+  --border: #1d3a23;
+  --text: #b8f0bf;
+  --muted: #5fbf73;
+  --faint: #3c7a49;
+  --accent: #39ff77;
+  --mark: rgba(57, 255, 119, 0.14);
+
+  --c-encyclopedia: #39ff77;
+  --c-textbook: #7cfc6a;
+  --c-paper: #5be3c0;
+  --c-discussion: #ffb000;
+  --c-book: #ffd000;
+  --c-reference: #00e0c0;
+  --c-news: #8fd99a;
+  --c-primary: #ffae42;
+  --c-checkpoint: #ff5f87;
+  --c-check: #7cfc6a;
+  --c-formula: #66ffcc;
+  --c-video: #ff5f87;
+  --thread-line: rgba(57, 255, 119, 0.5);
+
+  --sans: ui-monospace, 'JetBrains Mono', 'SFMono-Regular', Menlo, Consolas, monospace;
+  --serif: ui-monospace, 'JetBrains Mono', 'SFMono-Regular', Menlo, Consolas, monospace;
 }
 
 * {

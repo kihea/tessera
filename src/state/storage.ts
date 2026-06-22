@@ -212,6 +212,21 @@ export function apiEntries(ai: AiSettings | undefined = loadSettings().ai): AiMo
  * localStorage -- keys are never bundled into the app or sent anywhere except
  * the provider they belong to.
  */
+/** Visual themes. Standard is the original dark scholarly look. */
+export type ThemeName = 'standard' | 'alexandria' | 'terminal';
+
+export const THEMES: { key: ThemeName; label: string; blurb: string }[] = [
+  { key: 'standard', label: 'Standard', blurb: 'The dark scholarly default — quiet, high-contrast reading.' },
+  { key: 'alexandria', label: 'Library of Alexandria', blurb: 'Warm parchment and sepia ink — a classical reading room.' },
+  { key: 'terminal', label: 'Terminal', blurb: 'Black screen, phosphor green, monospace — a CRT console.' },
+];
+
+/** Apply a theme to the document root. Safe to call before/without a DOM. */
+export function applyTheme(theme: ThemeName | undefined): void {
+  if (typeof document === 'undefined') return;
+  document.documentElement.dataset.theme = theme ?? 'standard';
+}
+
 export interface AppSettings {
   /** OpenAlex Premium API key (optional -- raises rate limits). */
   openAlexApiKey?: string;
@@ -223,6 +238,8 @@ export interface AppSettings {
   serpApiKey?: string;
   /** Local/API model used to connect sources (optional). */
   ai?: AiSettings;
+  /** Visual theme (optional, defaults to 'standard'). */
+  theme?: ThemeName;
 }
 
 export function loadSettings(): AppSettings {

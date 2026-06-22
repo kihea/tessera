@@ -10,15 +10,17 @@
 // material to gather; it never writes a word the learner studies.
 
 import { useState } from 'react';
-import type { AiModel } from '../state/storage';
+import type { AiModel, ThemeName } from '../state/storage';
 import {
   activeModel,
   apiEntries,
+  applyTheme,
   DEFAULT_AI,
   HEURISTIC_MODEL,
   loadBandit,
   loadSettings,
   saveSettings,
+  THEMES,
 } from '../state/storage';
 import { webllmSupported } from '../ai/webllm';
 import { extLinkProps } from './external';
@@ -34,6 +36,7 @@ export function SettingsScreen({ onDone, onRetune }: { onDone: () => void; onRet
   const [email, setEmail] = useState(existing.politeEmail ?? '');
   const [youtubeKey, setYoutubeKey] = useState(existing.youtubeApiKey ?? '');
   const [serpKey, setSerpKey] = useState(existing.serpApiKey ?? '');
+  const [theme, setTheme] = useState<ThemeName>(existing.theme ?? 'standard');
   const [showKey, setShowKey] = useState(false);
   const [status, setStatus] = useState<KeyStatus>('idle');
   const [ai, setAi] = useState(existing.ai ?? DEFAULT_AI);
@@ -46,6 +49,7 @@ export function SettingsScreen({ onDone, onRetune }: { onDone: () => void; onRet
       politeEmail: email.trim() || undefined,
       youtubeApiKey: youtubeKey.trim() || undefined,
       serpApiKey: serpKey.trim() || undefined,
+      theme,
       ai,
     });
     onDone();
@@ -212,6 +216,34 @@ export function SettingsScreen({ onDone, onRetune }: { onDone: () => void; onRet
           />
         </section>
 
+        <h2 className="settings-group">Appearance</h2>
+
+        <section className="settings-field">
+          <label>Theme</label>
+          <p className="settings-hint">
+            How A.woke looks. Applies instantly as a preview; saved on this device when you press
+            Save (Cancel reverts to the last saved theme).
+          </p>
+          <div className="reach-opts" role="radiogroup" aria-label="Theme">
+            {THEMES.map((t) => (
+              <button
+                key={t.key}
+                type="button"
+                role="radio"
+                aria-checked={t.key === theme}
+                className={`reach-opt ${t.key === theme ? 'on' : ''}`}
+                onClick={() => {
+                  setTheme(t.key);
+                  applyTheme(t.key); // live preview
+                }}
+              >
+                <span className="reach-opt-name">{t.label}</span>
+                <span className="reach-opt-blurb">{t.blurb}</span>
+              </button>
+            ))}
+          </div>
+        </section>
+
         <h2 className="settings-group">Model &amp; learning</h2>
 
         <section className="settings-field">
@@ -268,7 +300,13 @@ export function SettingsScreen({ onDone, onRetune }: { onDone: () => void; onRet
         </section>
 
         <div className="settings-actions">
-          <button className="chip" onClick={onDone}>
+          <button
+            className="chip"
+            onClick={() => {
+              applyTheme(loadSettings().theme); // drop any live preview
+              onDone();
+            }}
+          >
             Cancel
           </button>
           <button className="ob-next" onClick={save} disabled={status === 'testing'}>

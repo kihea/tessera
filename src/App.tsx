@@ -3,7 +3,7 @@ import { OnboardingScreen } from './ui/OnboardingScreen';
 import { QueryScreen } from './ui/QueryScreen';
 import { SessionScreen } from './ui/SessionScreen';
 import { SettingsScreen } from './ui/SettingsScreen';
-import { loadPrefs } from './state/storage';
+import { applyTheme, loadPrefs, loadSettings } from './state/storage';
 
 function topicFromHash(): string | null {
   const m = window.location.hash.match(/^#t=(.+)$/);
@@ -21,6 +21,11 @@ export function App() {
     const onHash = () => setTopic(topicFromHash());
     window.addEventListener('hashchange', onHash);
     return () => window.removeEventListener('hashchange', onHash);
+  }, []);
+
+  // Apply the saved theme as early as the app mounts.
+  useEffect(() => {
+    applyTheme(loadSettings().theme);
   }, []);
 
   const open = (query: string) => {
