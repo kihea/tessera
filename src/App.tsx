@@ -4,6 +4,7 @@ import { QueryScreen } from './ui/QueryScreen';
 import { SessionScreen } from './ui/SessionScreen';
 import { SettingsScreen } from './ui/SettingsScreen';
 import { GraphScreen } from './ui/GraphScreen';
+import { ensureSeeded } from './state/graphStore';
 import { applyTheme, loadPrefs, loadSettings } from './state/storage';
 
 type Route =
@@ -36,6 +37,11 @@ export function App() {
   // Apply the saved theme as early as the app mounts.
   useEffect(() => {
     applyTheme(loadSettings().theme);
+  }, []);
+
+  // Seed the knowledge graph with the bundled baseline on first run.
+  useEffect(() => {
+    void ensureSeeded();
   }, []);
 
   const openTopic = (query: string) => {
