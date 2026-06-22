@@ -23,6 +23,7 @@ import type {
 import { isGate } from '../types';
 import { research } from '../research/providers';
 import { buildStudyMap, mergeResearch, researchBranches } from '../research/expand';
+import { classifyQuery } from '../research/classify';
 import { queryTokens, urlsToMarkdownLinks } from '../research/net';
 import { defineTerm } from '../research/wiktionary';
 import { extractConcepts } from '../weave/terms';
@@ -241,14 +242,17 @@ export function useSession(query: string) {
       const radius = Math.max(0, Math.min(1, loadSettings().ai?.radius ?? 0.5));
       const seedConcepts = extractConcepts(passages, query);
       const seedDocMap = new Map(docs.map((d) => [d.id, d]));
+      // What KIND of thing is this? Person / event / philosophy / topic steers
+      // which angles the study map reaches for (research/classify.ts).
+      const qType = classifyQuery(query, passages, seedDocMap);
       if (aiConfigured()) setMapGenerating(true); // heuristic returns instantly — no spinner
-      const studyMap = await buildStudyMap(query, passages, seedDocMap, seedConcepts, radius, (p) => {
+      const studyMap = await buildStudyMap(query, passages, seedDocMap, seedConcepts, radius, qType, (p) => {
         if (!cancelled) setModelLoad(p);
       });
       if (cancelled) return;
       setMapGenerating(false);
       setModelLoad(null); // model work is done; clear the bar for branch research
-      const branchRes = await researchBranches(studyMap, radius, onProgress);
+      const branchRes = await researchBranches(studyMap, radius, onProgress, qType);
       if (cancelled) return;
       const merged = mergeResearch(
         { docs, passages },

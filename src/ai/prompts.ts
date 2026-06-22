@@ -9,6 +9,18 @@
 // gathering REAL sources for -- never to write content itself.
 
 import type { BranchKind } from '../types';
+import type { QueryType } from '../research/classify';
+
+/** Type-specific gathering guidance folded into the study-map prompt. */
+const TYPE_GUIDANCE: Record<QueryType, string> = {
+  person:
+    'This MAIN IDEA is a PERSON. Gather threads that let real sources speak about them across their life and across eras: their formative background and influences, what they actually did or made, how contemporaries reported on them, and how later assessments and critics differ. Prefer branches that surface DIFFERENT periods and DIFFERENT angles, not one flattering summary.',
+  event:
+    'This MAIN IDEA is an EVENT. Gather ALL ANGLES: the causes and lead-up, the perspectives of the different sides/participants, the immediate aftermath and longer consequences, and the competing later interpretations (historiography). No single side should dominate the map.',
+  philosophy:
+    'This MAIN IDEA is a PHILOSOPHY / ideology. Gather its core tenets and origins, BUT ALSO its rivals and critics: opposing schools, the strongest arguments against it, and where it is contested — so the learner meets the full debate, with sources laying out each side in their own words.',
+  topic: '',
+};
 
 export const STUDY_MAP_SYSTEM = `You are the connection engine inside A.woke, a learning app whose feed shows ONLY verbatim excerpts from real sources. You never write content for the learner and you never summarize sources. Your single job: given a main idea and a sample of what real sources say about it, decide which neighboring concepts the learner needs REAL material on, so the sources -- not you -- can carry the understanding.
 
@@ -76,12 +88,15 @@ export function studyMapUser(
   radius: number,
   seedConcepts: string[],
   seedExcerpts: { title: string; text: string }[],
+  qType: QueryType = 'topic',
 ): string {
   const kinds = allowedKinds(radius).join(', ');
   const excerpts = seedExcerpts
     .map((e) => `--- from "${e.title}":\n${e.text}`)
     .join('\n\n');
+  const typeLine = TYPE_GUIDANCE[qType] ? `\n${TYPE_GUIDANCE[qType]}\n` : '';
   return `MAIN IDEA: ${query}
+${typeLine}
 
 REACH (0 = DEEP DIVE: stay tight on what the idea presupposes and is built from, gathered in depth; 1 = FRONTIER: stretch out to every angle, debate, and neighboring field): ${radius.toFixed(2)}
 Allowed branch kinds at this reach: ${kinds}
