@@ -41,17 +41,31 @@ export function GraphScreen({
   }, []);
   useEffect(() => setInput(topic ?? ''), [topic]);
 
+  // The subsection around the topic (its connected region).
+  const sub = useMemo(
+    () => (graph && topic ? searchGraph(graph, topic) : null),
+    [graph, topic],
+  );
+
   // The corpus to play: the matched subgraph for a topic, or the densest
   // concepts when browsing. Null when the graph is empty or has no match.
   const corpus = useMemo<Corpus | null>(() => {
     if (!graph || graph.passages.length === 0) return null;
-    if (topic) {
-      const sub = searchGraph(graph, topic);
-      return sub.conceptIds.length ? subgraphToCorpus(graph, sub.conceptIds) : null;
-    }
+    if (topic) return sub && sub.conceptIds.length ? subgraphToCorpus(graph, sub.conceptIds) : null;
     const top = [...graph.concepts].sort((a, b) => b.df - a.df).slice(0, 18).map((c) => c.id);
     return top.length ? subgraphToCorpus(graph, top) : null;
-  }, [graph, topic]);
+  }, [graph, topic, sub]);
+
+  // "Broaden" follows the abstraction axis: the most general idea in this
+  // region (pig's region -> animal -> animalness), to traverse outward/up.
+  const broaden = useMemo(() => {
+    if (!graph || !sub || sub.conceptIds.length === 0) return null;
+    const inSub = graph.concepts.filter((c) => sub.conceptIds.includes(c.id));
+    const top = [...inSub]
+      .sort((a, b) => b.generality - a.generality)
+      .find((c) => c.label.toLowerCase() !== (topic ?? '').toLowerCase());
+    return top?.label ?? null;
+  }, [graph, sub, topic]);
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
@@ -74,6 +88,16 @@ export function GraphScreen({
           </p>
         </div>
         <form className="graph-search" onSubmit={submit}>
+          {broaden && (
+            <button
+              type="button"
+              className="chip"
+              title={`Broaden toward the more general idea: ${broaden}`}
+              onClick={() => onSearch(broaden)}
+            >
+              ↑ {broaden}
+            </button>
+          )}
           <input
             value={input}
             onChange={(e) => setInput(e.target.value)}
