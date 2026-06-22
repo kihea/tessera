@@ -366,29 +366,40 @@ export async function researchBranches(
         // broadly once reach climbs (frontier wants every scholarly angle).
         const wantPapers = (deepKinds.has(branch.kind) && radius >= 0.34) || radius >= 0.6;
         const empty = Promise.resolve({ docs: [] as SourceDoc[], passages: [] as Passage[] });
-        // Entity-aware angles, gated by reach so deep dives stay tight: a PERSON
-        // or EVENT branch also pulls period reporting (Chronicling America) and
-        // modern discussion (Hacker News) for "the story across eras / every
-        // side"; a PHILOSOPHY branch pulls long-form / primary text (Internet
-        // Archive) so a rival or critic gets to talk at length.
+        // Entity-aware angles, gated by reach so deep dives stay tight. A PERSON
+        // or EVENT branch pulls reporting from BOTH eras of real journalism --
+        // Wikinews (2004–present) and Chronicling America (historic papers) --
+        // for "the story across time", plus modern DISCUSSION (Hacker News) as
+        // its own distinct angle, never as a stand-in for news. A PHILOSOPHY
+        // branch pulls long-form / primary text (Internet Archive) so a rival or
+        // critic gets to talk at length.
         const angle = angleKinds.has(branch.kind) && radius >= 0.5;
         const wantNews = angle && (qType === 'person' || qType === 'event');
         const wantArchive = angle && (qType === 'philosophy' || qType === 'event');
-        const [wiki, papers, news, talk, archive] = await Promise.all([
+        const [wiki, papers, histNews, modNews, talk, archive] = await Promise.all([
           searchWiki(branch.query, 'en.wikipedia.org', 'encyclopedia', 'Wikipedia', branchPages, branchPassages),
           wantPapers ? searchOpenAlex(branch.query, paperCount) : empty,
           wantNews ? searchChronicling(branch.query, 2) : empty,
+          wantNews ? searchWiki(branch.query, 'en.wikinews.org', 'news', 'Wikinews', 2, 3) : empty,
           wantNews ? searchHN(branch.query, 3) : empty,
           wantArchive ? searchArchive(branch.query, 1, 3) : empty,
         ]);
-        const docs = [...wiki.docs, ...papers.docs, ...news.docs, ...talk.docs, ...archive.docs];
+        const docs = [
+          ...wiki.docs,
+          ...papers.docs,
+          ...histNews.docs,
+          ...modNews.docs,
+          ...talk.docs,
+          ...archive.docs,
+        ];
         for (const doc of docs) {
           doc.branch = { kind: branch.kind, concept: branch.concept, why: branch.why };
         }
         const passages = [
           ...wiki.passages,
           ...papers.passages,
-          ...news.passages,
+          ...histNews.passages,
+          ...modNews.passages,
           ...talk.passages,
           ...archive.passages,
         ];

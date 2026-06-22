@@ -80,6 +80,10 @@ export async function research(query: string, onProgress: ProgressFn): Promise<R
     { name: 'Google Scholar', run: () => searchScholar(query) },
     { name: 'Hacker News', run: () => searchHN(query) },
     { name: 'Open Library', run: () => searchOpenLibrary(query) },
+    // News from two eras of real journalism: Wikinews (2004–present) and
+    // Chronicling America (historic US papers). Hacker News is DISCUSSION, not
+    // news -- it never stands in for reporting.
+    { name: 'Wikinews', run: () => searchWiki(query, 'en.wikinews.org', 'news', 'Wikinews', 2, 4) },
     { name: 'Chronicling America', run: () => searchChronicling(query) },
     { name: 'Internet Archive', run: () => searchArchive(query) },
     // Curated intro videos: keyless + offline, so it works in web AND desktop;
