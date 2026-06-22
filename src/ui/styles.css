@@ -531,6 +531,45 @@ a {
   color: var(--faint);
 }
 
+.settings-tabs {
+  display: flex;
+  gap: 6px;
+  margin: 22px 0 4px;
+  border-bottom: 1px solid var(--border);
+}
+
+.settings-tab {
+  appearance: none;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  padding: 9px 14px;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.settings-tab:hover {
+  color: var(--text);
+}
+
+.settings-tab.on {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+.settings-subhead {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  margin-top: 18px;
+}
+
+.settings-subhead .settings-hint {
+  flex: 1;
+}
+
 .settings-field {
   margin-top: 26px;
 }

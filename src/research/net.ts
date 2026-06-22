@@ -15,6 +15,28 @@ export async function getJSON(url: string, timeoutMs = 9000): Promise<unknown | 
   }
 }
 
+const inTauri = () => typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+
+/**
+ * Like getJSON, but on the desktop app it routes through the Rust core (no
+ * browser same-origin policy), so keyed providers whose APIs don't send CORS
+ * headers (The Guardian, GNews) still work there. In the pure-web build it
+ * falls back to a direct fetch -- best-effort, so a CORS-blocked provider just
+ * contributes nothing rather than erroring.
+ */
+export async function getJSONProxied(url: string, timeoutMs = 12000): Promise<unknown | null> {
+  if (inTauri()) {
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      const text = await invoke<string>('http_get', { url, timeoutMs });
+      return text ? JSON.parse(text) : null;
+    } catch {
+      return null;
+    }
+  }
+  return getJSON(url, timeoutMs);
+}
+
 /** Strip HTML tags and decode the handful of entities these APIs emit. */
 export function stripHtml(html: string): string {
   return html

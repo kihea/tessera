@@ -18,6 +18,8 @@ import { searchWiki } from './wiki';
 import { searchChronicling } from './chronicling';
 import { searchArchive } from './archive';
 import { searchHN } from './hn';
+import { searchGuardian } from './guardian';
+import { searchNYT } from './nyt';
 import type { QueryType } from './classify';
 import { nearDuplicate, wordSet } from './providers';
 
@@ -367,20 +369,22 @@ export async function researchBranches(
         const wantPapers = (deepKinds.has(branch.kind) && radius >= 0.34) || radius >= 0.6;
         const empty = Promise.resolve({ docs: [] as SourceDoc[], passages: [] as Passage[] });
         // Entity-aware angles, gated by reach so deep dives stay tight. A PERSON
-        // or EVENT branch pulls reporting from BOTH eras of real journalism --
-        // Wikinews (2004–present) and Chronicling America (historic papers) --
-        // for "the story across time", plus modern DISCUSSION (Hacker News) as
-        // its own distinct angle, never as a stand-in for news. A PHILOSOPHY
-        // branch pulls long-form / primary text (Internet Archive) so a rival or
-        // critic gets to talk at length.
+        // or EVENT branch pulls reporting across eras -- Wikinews and Chronicling
+        // America (keyless), plus The Guardian and NYT when keys are set -- for
+        // "the story across time", plus modern DISCUSSION (Hacker News) as its
+        // own distinct angle, never a stand-in for news. A PHILOSOPHY branch
+        // pulls long-form / primary text (Internet Archive) so a rival or critic
+        // gets to talk at length. (Keyed providers no-op without a key.)
         const angle = angleKinds.has(branch.kind) && radius >= 0.5;
         const wantNews = angle && (qType === 'person' || qType === 'event');
         const wantArchive = angle && (qType === 'philosophy' || qType === 'event');
-        const [wiki, papers, histNews, modNews, talk, archive] = await Promise.all([
+        const [wiki, papers, histNews, modNews, guardian, nyt, talk, archive] = await Promise.all([
           searchWiki(branch.query, 'en.wikipedia.org', 'encyclopedia', 'Wikipedia', branchPages, branchPassages),
           wantPapers ? searchOpenAlex(branch.query, paperCount) : empty,
           wantNews ? searchChronicling(branch.query, 2) : empty,
           wantNews ? searchWiki(branch.query, 'en.wikinews.org', 'news', 'Wikinews', 2, 3) : empty,
+          wantNews ? searchGuardian(branch.query, 4) : empty,
+          wantNews ? searchNYT(branch.query) : empty,
           wantNews ? searchHN(branch.query, 3) : empty,
           wantArchive ? searchArchive(branch.query, 1, 3) : empty,
         ]);
@@ -389,6 +393,8 @@ export async function researchBranches(
           ...papers.docs,
           ...histNews.docs,
           ...modNews.docs,
+          ...guardian.docs,
+          ...nyt.docs,
           ...talk.docs,
           ...archive.docs,
         ];
@@ -400,6 +406,8 @@ export async function researchBranches(
           ...papers.passages,
           ...histNews.passages,
           ...modNews.passages,
+          ...guardian.passages,
+          ...nyt.passages,
           ...talk.passages,
           ...archive.passages,
         ];

@@ -236,6 +236,12 @@ export interface AppSettings {
   youtubeApiKey?: string;
   /** SerpApi key (optional, desktop only) -- enables the Google Scholar feed. */
   serpApiKey?: string;
+  /** The Guardian Open Platform key (optional) -- modern news with body text. */
+  guardianApiKey?: string;
+  /** NYT Article Search key (optional) -- reporting back to 1851. */
+  nytApiKey?: string;
+  /** GNews key (optional) -- a keyed aggregator across many outlets. */
+  gnewsApiKey?: string;
   /** Local/API model used to connect sources (optional). */
   ai?: AiSettings;
   /** Visual theme (optional, defaults to 'standard'). */

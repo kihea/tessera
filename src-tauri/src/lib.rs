@@ -322,6 +322,27 @@ async fn scholar_search(
     Ok(out)
 }
 
+/// Generic best-effort GET that returns the raw body text. Lets keyed web
+/// providers whose APIs don't send CORS headers (The Guardian, GNews, …) work
+/// on the desktop app, where there is no browser same-origin policy. The TS
+/// side owns the URL (key included) and the JSON parsing.
+#[tauri::command]
+async fn http_get(url: String, timeout_ms: Option<u64>) -> Result<String, String> {
+    let http = client()?;
+    let res = http
+        .get(&url)
+        .timeout(Duration::from_millis(timeout_ms.unwrap_or(12000)))
+        .send()
+        .await
+        .map_err(|e| format!("request failed: {e}"))?;
+    let status = res.status();
+    let text = res.text().await.map_err(|e| e.to_string())?;
+    if !status.is_success() {
+        return Err(format!("{status}: {}", text.chars().take(160).collect::<String>()));
+    }
+    Ok(text)
+}
+
 /// Pull the first caption track's baseUrl out of a watch page's player response.
 fn extract_caption_base_url(page: &str) -> Option<String> {
     let anchor = page.find("\"captionTracks\":")?;
@@ -342,7 +363,8 @@ pub fn run() {
             list_ollama_models,
             yt_search,
             yt_transcript,
-            scholar_search
+            scholar_search,
+            http_get
         ])
         .run(tauri::generate_context!())
         .expect("error while running tessera");

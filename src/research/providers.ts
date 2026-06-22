@@ -7,6 +7,9 @@ import { searchArchive } from './archive';
 import { searchChronicling } from './chronicling';
 import { searchCrossref } from './crossref';
 import { searchHN } from './hn';
+import { searchGuardian } from './guardian';
+import { searchNYT } from './nyt';
+import { searchGNews } from './gnews';
 import { searchOpenLibrary } from './openlibrary';
 import { resolveCitations, searchOpenAlex } from './openalex';
 import { seedTitlesFor } from './seeds';
@@ -80,11 +83,15 @@ export async function research(query: string, onProgress: ProgressFn): Promise<R
     { name: 'Google Scholar', run: () => searchScholar(query) },
     { name: 'Hacker News', run: () => searchHN(query) },
     { name: 'Open Library', run: () => searchOpenLibrary(query) },
-    // News from two eras of real journalism: Wikinews (2004–present) and
-    // Chronicling America (historic US papers). Hacker News is DISCUSSION, not
-    // news -- it never stands in for reporting.
+    // News across eras of real journalism. Wikinews (2004–present) and
+    // Chronicling America (historic US papers) are keyless; The Guardian, NYT,
+    // and GNews are opt-in keyed providers that no-op until a key is added
+    // (Settings → Sources). Hacker News is DISCUSSION, never a stand-in for news.
     { name: 'Wikinews', run: () => searchWiki(query, 'en.wikinews.org', 'news', 'Wikinews', 2, 4) },
     { name: 'Chronicling America', run: () => searchChronicling(query) },
+    { name: 'The Guardian', run: () => searchGuardian(query) },
+    { name: 'New York Times', run: () => searchNYT(query) },
+    { name: 'GNews', run: () => searchGNews(query) },
     { name: 'Internet Archive', run: () => searchArchive(query) },
     // Curated intro videos: keyless + offline, so it works in web AND desktop;
     // trusted channels, embedded whole. The reliable backbone of the video feed.
