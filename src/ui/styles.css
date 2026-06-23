@@ -1968,6 +1968,10 @@ a {
   stroke: var(--c-book, #e3b341);
   opacity: 0.55;
 }
+.map-edge.edge-semantic {
+  stroke: var(--c-reference, #39c5cf);
+  opacity: 0.5;
+}
 
 .graph-legend {
   display: flex;
@@ -1984,6 +1988,9 @@ a {
 .legend-attr,
 .legend-edge-attr {
   color: var(--c-paper, #bc8cff);
+}
+.legend-edge-sem {
+  color: var(--c-reference, #39c5cf);
 }
 
 .map-caption {

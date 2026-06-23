@@ -252,6 +252,7 @@ function GraphFeed({
         <span className="legend-item legend-attr">● attribute</span>
         <span className="legend-item legend-edge-attr">┄ has-attribute</span>
         <span className="legend-item legend-edge-assoc">— relates (thicker = stronger)</span>
+        <span className="legend-item legend-edge-sem">⋯ semantically near (embeddings)</span>
       </div>
       <div className="session-main graph-main">
         <FeedPane session={session} registerEl={registerEl} onJump={jumpTo} />

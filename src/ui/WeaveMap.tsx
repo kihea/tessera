@@ -20,7 +20,7 @@ export interface MapEdge {
   a: string;
   b: string;
   degree: number;
-  kind: 'associative' | 'abstraction' | 'attribute';
+  kind: 'associative' | 'abstraction' | 'attribute' | 'semantic';
 }
 
 export function WeaveMap({
@@ -110,7 +110,9 @@ export function WeaveMap({
             y2={e.b.y}
             className={`map-edge edge-${e.kind} ${e.a.seen && e.b.seen ? 'lit' : ''}`}
             strokeWidth={Math.min(3.4, graphEdges ? e.w : 0.6 + e.w * 0.5)}
-            strokeDasharray={e.kind === 'attribute' ? '4 3' : undefined}
+            strokeDasharray={
+              e.kind === 'attribute' ? '4 3' : e.kind === 'semantic' ? '1 4' : undefined
+            }
           />
         ))}
         {nodes.map((n) => (
