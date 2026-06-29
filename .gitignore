@@ -1,0 +1,38 @@
+# dependencies
+node_modules/
+
+# web build output
+dist/
+dist-ssr/
+*.local
+
+# Tauri / Rust build artifacts (the source under src-tauri/ IS committed)
+src-tauri/target/
+src-tauri/gen/
+
+# logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# editor / OS
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+Thumbs.db
+
+# local env / secrets
+.env
+.env.*
+!.env.example
+
+# agent / tooling scratch
+.claude/
