@@ -107,6 +107,12 @@ export interface Concept {
   definition?: { text: string; url: string; source: string };
   /** Passage that defines this term inside the corpus, if any. */
   definedByPassage?: string;
+  /**
+   * Form (entity/substance) vs attribute (quality). Set only when a corpus is
+   * rehydrated from the knowledge graph (graphStore.subgraphToCorpus) so the
+   * graph view can distinguish them; unset in live sessions, ignored by the loom.
+   */
+  kind?: 'form' | 'attribute';
 }
 
 /**

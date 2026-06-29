@@ -212,6 +212,21 @@ export function apiEntries(ai: AiSettings | undefined = loadSettings().ai): AiMo
  * localStorage -- keys are never bundled into the app or sent anywhere except
  * the provider they belong to.
  */
+/** Visual themes. Standard is the original dark scholarly look. */
+export type ThemeName = 'standard' | 'alexandria' | 'terminal';
+
+export const THEMES: { key: ThemeName; label: string; blurb: string }[] = [
+  { key: 'standard', label: 'Standard', blurb: 'The dark scholarly default — quiet, high-contrast reading.' },
+  { key: 'alexandria', label: 'Library of Alexandria', blurb: 'Warm parchment and sepia ink — a classical reading room.' },
+  { key: 'terminal', label: 'Terminal', blurb: 'Black screen, phosphor green, monospace — a CRT console.' },
+];
+
+/** Apply a theme to the document root. Safe to call before/without a DOM. */
+export function applyTheme(theme: ThemeName | undefined): void {
+  if (typeof document === 'undefined') return;
+  document.documentElement.dataset.theme = theme ?? 'standard';
+}
+
 export interface AppSettings {
   /** OpenAlex Premium API key (optional -- raises rate limits). */
   openAlexApiKey?: string;
@@ -219,8 +234,41 @@ export interface AppSettings {
   politeEmail?: string;
   /** YouTube Data API key (optional, desktop only) -- enables the video feed. */
   youtubeApiKey?: string;
+  /** SerpApi key (optional, desktop only) -- enables the Google Scholar feed. */
+  serpApiKey?: string;
+  /** The Guardian Open Platform key (optional) -- modern news with body text. */
+  guardianApiKey?: string;
+  /** NYT Article Search key (optional) -- reporting back to 1851. */
+  nytApiKey?: string;
+  /** GNews key (optional) -- a keyed aggregator across many outlets. */
+  gnewsApiKey?: string;
   /** Local/API model used to connect sources (optional). */
   ai?: AiSettings;
+  /** Visual theme (optional, defaults to 'standard'). */
+  theme?: ThemeName;
+  /** Auto-fold each session into the knowledge graph (default on). */
+  autoGraph?: boolean;
+  /** Experimental feature toggles (Developer tab); all default ON. */
+  dev?: DevFlags;
+}
+
+/** Experimental feature flags, surfaced in the Settings → Developer tab. Each
+ *  is undefined-means-on, so the app ships with everything enabled. */
+export interface DevFlags {
+  /** Keep gathering fresh angles at Frontier reach (endless feed). */
+  endlessFrontier?: boolean;
+  /** Steer gathering by query type (person / event / philosophy). */
+  entityAware?: boolean;
+  /** Pull the knowledge graph in as a source alongside the live providers. */
+  graphProvider?: boolean;
+  /** Use the configured model's embeddings to refine the graph (opt-in, off by
+   *  default since it makes extra model calls). */
+  embeddings?: boolean;
+}
+
+/** Read one experimental flag; defaults to ON unless explicitly disabled. */
+export function devFlag(key: keyof DevFlags): boolean {
+  return loadSettings().dev?.[key] !== false;
 }
 
 export function loadSettings(): AppSettings {

@@ -12,6 +12,15 @@ interface NodePos {
   y: number;
   r: number;
   seen: boolean;
+  kind?: 'form' | 'attribute';
+}
+
+/** Typed, degreed edges (from the knowledge graph) for the graph screen. */
+export interface MapEdge {
+  a: string;
+  b: string;
+  degree: number;
+  kind: 'associative' | 'abstraction' | 'attribute' | 'semantic';
 }
 
 export function WeaveMap({
@@ -19,11 +28,15 @@ export function WeaveMap({
   cards,
   viewedCardIds,
   onConceptClick,
+  edges: graphEdges,
 }: {
   corpus: Corpus;
   cards: FeedCard[];
   viewedCardIds: Set<string>;
   onConceptClick: (conceptId: string) => void;
+  /** When supplied (graph screen), render these typed/degree edges instead of
+   *  the on-the-fly co-occurrence edges, and show every subgraph node. */
+  edges?: MapEdge[];
 }) {
   const { nodes, edges } = useMemo(() => {
     const W = 920;
@@ -40,7 +53,11 @@ export function WeaveMap({
       if (card.kind === 'definition' || card.kind === 'formula') seenConcepts.add(card.conceptId);
     }
 
-    const sorted = [...corpus.concepts].sort((a, b) => b.df - a.df).slice(0, 18);
+    // Graph screen shows the whole (bounded) subgraph; a live session shows the
+    // densest 18 concepts.
+    const sorted = [...corpus.concepts]
+      .sort((a, b) => b.df - a.df)
+      .slice(0, graphEdges ? 40 : 18);
     const nodes: NodePos[] = sorted.map((c, i) => {
       const angle = (2 * Math.PI * i) / sorted.length - Math.PI / 2;
       return {
@@ -50,22 +67,36 @@ export function WeaveMap({
         y: cy + ry * Math.sin(angle),
         r: 5 + Math.min(9, c.df),
         seen: seenConcepts.has(c.id),
+        kind: c.kind,
       };
     });
     const byId = new Map(nodes.map((n) => [n.id, n]));
 
-    const edges: { a: NodePos; b: NodePos; w: number }[] = [];
-    for (let i = 0; i < sorted.length; i++) {
-      for (let j = i + 1; j < sorted.length; j++) {
-        const shared = sorted[i].passageIds.filter((p) => sorted[j].passageIds.includes(p)).length;
-        if (shared >= 2) {
-          edges.push({ a: byId.get(sorted[i].id)!, b: byId.get(sorted[j].id)!, w: shared });
+    const edges: { a: NodePos; b: NodePos; w: number; kind: MapEdge['kind'] }[] = [];
+    if (graphEdges) {
+      for (const e of graphEdges) {
+        const a = byId.get(e.a);
+        const b = byId.get(e.b);
+        if (a && b) edges.push({ a, b, w: 0.5 + e.degree * 3, kind: e.kind });
+      }
+    } else {
+      for (let i = 0; i < sorted.length; i++) {
+        for (let j = i + 1; j < sorted.length; j++) {
+          const shared = sorted[i].passageIds.filter((p) => sorted[j].passageIds.includes(p)).length;
+          if (shared >= 2) {
+            edges.push({
+              a: byId.get(sorted[i].id)!,
+              b: byId.get(sorted[j].id)!,
+              w: shared,
+              kind: 'associative',
+            });
+          }
         }
       }
     }
     edges.sort((x, y) => y.w - x.w);
-    return { nodes, edges: edges.slice(0, 36) };
-  }, [corpus, cards, viewedCardIds]);
+    return { nodes, edges: edges.slice(0, graphEdges ? 80 : 36) };
+  }, [corpus, cards, viewedCardIds, graphEdges]);
 
   return (
     <div className="weave-map">
@@ -77,14 +108,17 @@ export function WeaveMap({
             y1={e.a.y}
             x2={e.b.x}
             y2={e.b.y}
-            className={`map-edge ${e.a.seen && e.b.seen ? 'lit' : ''}`}
-            strokeWidth={Math.min(3, 0.6 + e.w * 0.5)}
+            className={`map-edge edge-${e.kind} ${e.a.seen && e.b.seen ? 'lit' : ''}`}
+            strokeWidth={Math.min(3.4, graphEdges ? e.w : 0.6 + e.w * 0.5)}
+            strokeDasharray={
+              e.kind === 'attribute' ? '4 3' : e.kind === 'semantic' ? '1 4' : undefined
+            }
           />
         ))}
         {nodes.map((n) => (
           <g
             key={n.id}
-            className={`map-node ${n.seen ? 'seen' : ''}`}
+            className={`map-node ${n.seen ? 'seen' : ''} ${n.kind ?? ''}`}
             onClick={() => onConceptClick(n.id)}
           >
             <circle cx={n.x} cy={n.y} r={n.r} />

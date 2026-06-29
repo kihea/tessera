@@ -75,7 +75,7 @@ export function OnboardingScreen({ onDone }: { onDone: () => void }) {
     <div className="onboarding">
       <div className="ob-inner">
         <div className="brand">
-          <span className="brand-mark">◳</span> Tessera
+          <span className="brand-mark">◳</span> A.woke
         </div>
         <div className="ob-progress">
           {[0, 1, 2].map((i) => (
@@ -157,7 +157,7 @@ export function OnboardingScreen({ onDone }: { onDone: () => void }) {
               ))}
             </div>
             <p className="ob-honest">
-              These answers only warm-start the picture. From here Tessera watches what you
+              These answers only warm-start the picture. From here A.woke watches what you
               actually do — what you clip, which sources you open, which weaves you complete — and
               forms its own evidence-based idea of how you retain. The questionnaire fades as the
               evidence grows.

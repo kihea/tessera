@@ -7,15 +7,21 @@ import { searchArchive } from './archive';
 import { searchChronicling } from './chronicling';
 import { searchCrossref } from './crossref';
 import { searchHN } from './hn';
+import { searchGuardian } from './guardian';
+import { searchNYT } from './nyt';
+import { searchGNews } from './gnews';
 import { searchOpenLibrary } from './openlibrary';
 import { resolveCitations, searchOpenAlex } from './openalex';
 import { seedTitlesFor } from './seeds';
 import { searchWiki } from './wiki';
 import { harvestWikiPages } from './wikipage';
 import { searchYouTube } from './youtube';
+import { searchScholar } from './scholar';
 import { searchBakedVideos } from './bakedVideos';
 import { dropLeadingMeta } from './net';
 import { filterToDominantLanguage } from './lang';
+import { graphProviderSearch } from '../state/graphStore';
+import { devFlag } from '../state/storage';
 
 export interface ResearchResult {
   docs: SourceDoc[];
@@ -49,6 +55,13 @@ export async function research(query: string, onProgress: ProgressFn): Promise<R
       name: 'Wikipedia',
       run: () => wikipediaRun,
     },
+    // Your own knowledge graph, pulled alongside the live sources: verbatim
+    // material you've already gathered on neighboring ideas. Early in the order
+    // so curated, connected material is preferred when it duplicates a fresh hit.
+    // (Experimental -- toggleable in Settings → Developer.)
+    ...(devFlag('graphProvider')
+      ? [{ name: 'Your knowledge graph', run: () => graphProviderSearch(query) }]
+      : []),
     {
       name: 'Wikibooks',
       run: () => searchWiki(query, 'en.wikibooks.org', 'textbook', 'Wikibooks', 2, 7),
@@ -73,9 +86,21 @@ export async function research(query: string, onProgress: ProgressFn): Promise<R
       },
     },
     { name: 'Crossref', run: () => searchCrossref(query) },
+    // After the abstract providers: Scholar's snippet is a short, truncated
+    // excerpt, so when it mirrors a fuller OpenAlex/Crossref abstract the fuller
+    // verbatim text wins the dedup. Desktop-only, keyed via SerpApi (see scholar.ts).
+    { name: 'Google Scholar', run: () => searchScholar(query) },
     { name: 'Hacker News', run: () => searchHN(query) },
     { name: 'Open Library', run: () => searchOpenLibrary(query) },
+    // News across eras of real journalism. Wikinews (2004–present) and
+    // Chronicling America (historic US papers) are keyless; The Guardian, NYT,
+    // and GNews are opt-in keyed providers that no-op until a key is added
+    // (Settings → Sources). Hacker News is DISCUSSION, never a stand-in for news.
+    { name: 'Wikinews', run: () => searchWiki(query, 'en.wikinews.org', 'news', 'Wikinews', 2, 4) },
     { name: 'Chronicling America', run: () => searchChronicling(query) },
+    { name: 'The Guardian', run: () => searchGuardian(query) },
+    { name: 'New York Times', run: () => searchNYT(query) },
+    { name: 'GNews', run: () => searchGNews(query) },
     { name: 'Internet Archive', run: () => searchArchive(query) },
     // Curated intro videos: keyless + offline, so it works in web AND desktop;
     // trusted channels, embedded whole. The reliable backbone of the video feed.

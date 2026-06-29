@@ -1,5 +1,7 @@
-/* Tessera — dark scholarly theme. Excerpts read in serif (they are quotations
-   from real sources); the app chrome stays in the UI sans stack. */
+/* A.woke — the palette lives in CSS variables so themes (Standard, Library of
+   Alexandria, Terminal) override colors/fonts without touching layout. Excerpts
+   read in serif (they are quotations from real sources); chrome uses the sans
+   stack. See state/storage.ts THEMES and [data-theme=...] blocks below. */
 
 :root {
   --bg: #0d1117;
@@ -28,6 +30,67 @@
 
   --sans: 'Segoe UI', system-ui, -apple-system, sans-serif;
   --serif: Georgia, 'Iowan Old Style', 'Times New Roman', serif;
+}
+
+/* ---- themes: override the palette; structure/layout stay shared --------- */
+
+/* Library of Alexandria — warm parchment, sepia ink, a classical reading room. */
+:root[data-theme='alexandria'] {
+  color-scheme: light;
+  --bg: #f1e6cd;
+  --panel: #efe1c2;
+  --panel2: #e7d6b1;
+  --border: #cdba8e;
+  --text: #3a2c18;
+  --muted: #6f5c3c;
+  --faint: #9a8557;
+  --accent: #9a571f;
+  --mark: rgba(154, 87, 31, 0.18);
+
+  --c-encyclopedia: #1f6f8b;
+  --c-textbook: #3f7d3a;
+  --c-paper: #7a4fb0;
+  --c-discussion: #b5651d;
+  --c-book: #9a6a16;
+  --c-reference: #1f8a8a;
+  --c-news: #6f5c3c;
+  --c-primary: #b5651d;
+  --c-checkpoint: #b03a5b;
+  --c-check: #3f7d3a;
+  --c-formula: #7a4fb0;
+  --c-video: #b03a3a;
+  --thread-line: rgba(154, 87, 31, 0.5);
+}
+
+/* Terminal — black screen, phosphor green, monospace. */
+:root[data-theme='terminal'] {
+  color-scheme: dark;
+  --bg: #050806;
+  --panel: #081109;
+  --panel2: #0b1a0d;
+  --border: #1d3a23;
+  --text: #b8f0bf;
+  --muted: #5fbf73;
+  --faint: #3c7a49;
+  --accent: #39ff77;
+  --mark: rgba(57, 255, 119, 0.14);
+
+  --c-encyclopedia: #39ff77;
+  --c-textbook: #7cfc6a;
+  --c-paper: #5be3c0;
+  --c-discussion: #ffb000;
+  --c-book: #ffd000;
+  --c-reference: #00e0c0;
+  --c-news: #8fd99a;
+  --c-primary: #ffae42;
+  --c-checkpoint: #ff5f87;
+  --c-check: #7cfc6a;
+  --c-formula: #66ffcc;
+  --c-video: #ff5f87;
+  --thread-line: rgba(57, 255, 119, 0.5);
+
+  --sans: ui-monospace, 'JetBrains Mono', 'SFMono-Regular', Menlo, Consolas, monospace;
+  --serif: ui-monospace, 'JetBrains Mono', 'SFMono-Regular', Menlo, Consolas, monospace;
 }
 
 * {
@@ -434,6 +497,136 @@ a {
   border-color: var(--accent);
 }
 
+.graph-link {
+  position: fixed;
+  top: 16px;
+  right: 122px;
+  z-index: 5;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 13px;
+  padding: 6px 13px;
+}
+
+.graph-link:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+/* --------------------------------------------------------- knowledge graph */
+
+.graph-screen {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.graph-sub {
+  margin: 2px 0 0;
+  color: var(--faint);
+  font-size: 12.5px;
+}
+
+.graph-search {
+  margin-left: auto;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.graph-search input {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text);
+  font-size: 14px;
+  padding: 8px 14px;
+  min-width: 240px;
+}
+
+.graph-search input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.graph-search button {
+  background: var(--accent);
+  border: none;
+  border-radius: 999px;
+  color: #08121f;
+  font-weight: 600;
+  padding: 8px 16px;
+}
+
+.graph-empty {
+  margin: 12vh auto 0;
+  max-width: 520px;
+  text-align: center;
+  color: var(--muted);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  align-items: center;
+  padding: 0 24px;
+}
+
+.graph-main {
+  flex: 1;
+  min-height: 0;
+}
+
+.graph-notes {
+  padding: 10px 20px 0;
+}
+
+.graph-notes h2 {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--faint);
+  margin: 0 0 8px;
+}
+
+.graph-notes-row {
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+  padding-bottom: 6px;
+}
+
+.graph-note {
+  flex: 0 0 260px;
+  text-align: left;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.graph-note:hover {
+  border-color: var(--accent);
+}
+
+.graph-note-topic {
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--text);
+  text-transform: capitalize;
+}
+
+.graph-note-text {
+  font-size: 12.5px;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
 .settings-screen {
   height: 100%;
   overflow-y: auto;
@@ -455,6 +648,71 @@ a {
   color: var(--muted);
   font-size: 14px;
   line-height: 1.55;
+}
+
+.settings-group {
+  margin: 34px 0 4px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--line, rgba(255, 255, 255, 0.1));
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.settings-tabs {
+  display: flex;
+  gap: 6px;
+  margin: 22px 0 4px;
+  border-bottom: 1px solid var(--border);
+}
+
+.settings-tab {
+  appearance: none;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  padding: 9px 14px;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.settings-tab:hover {
+  color: var(--text);
+}
+
+.settings-tab.on {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+.settings-subhead {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  margin-top: 18px;
+}
+
+.settings-subhead .settings-hint {
+  flex: 1;
+}
+
+.settings-check {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 8px 0 14px;
+  font-size: 14px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.settings-check input {
+  width: auto;
+  margin: 0;
 }
 
 .settings-field {
@@ -1692,6 +1950,49 @@ a {
   fill: var(--text);
 }
 
+/* forms vs attributes (graph screen): forms are solid entity nodes, attributes
+   are lighter quality nodes; has-attribute edges are dashed. */
+.map-node.attribute circle {
+  fill: transparent;
+  stroke: var(--c-paper, #bc8cff);
+  stroke-dasharray: 3 2;
+}
+.map-node.form circle {
+  stroke: var(--c-encyclopedia, #6ea8fe);
+}
+.map-edge.edge-attribute {
+  stroke: var(--c-paper, #bc8cff);
+  opacity: 0.5;
+}
+.map-edge.edge-abstraction {
+  stroke: var(--c-book, #e3b341);
+  opacity: 0.55;
+}
+.map-edge.edge-semantic {
+  stroke: var(--c-reference, #39c5cf);
+  opacity: 0.5;
+}
+
+.graph-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  justify-content: center;
+  padding: 2px 0 8px;
+  font-size: 12px;
+  color: var(--faint);
+}
+.legend-form {
+  color: var(--c-encyclopedia, #6ea8fe);
+}
+.legend-attr,
+.legend-edge-attr {
+  color: var(--c-paper, #bc8cff);
+}
+.legend-edge-sem {
+  color: var(--c-reference, #39c5cf);
+}
+
 .map-caption {
   color: var(--faint);
   font-size: 12px;
@@ -2391,6 +2692,18 @@ a {
 
 .lock-ico {
   font-size: 15px;
+}
+
+.loading-more {
+  max-width: 760px;
+  margin: 4px auto 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 14px 18px;
+  color: var(--faint);
+  font-size: 13.5px;
 }
 
 /* --------------------------------------------------------------- notes */

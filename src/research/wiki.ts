@@ -80,7 +80,7 @@ async function parsePlainText(api: string, pageid: number): Promise<string | nul
 
 export async function searchWiki(
   query: string,
-  host: 'en.wikipedia.org' | 'en.wikibooks.org' | 'en.wikisource.org',
+  host: 'en.wikipedia.org' | 'en.wikibooks.org' | 'en.wikisource.org' | 'en.wikinews.org',
   sourceType: SourceType,
   provider: string,
   maxPages: number,
@@ -120,7 +120,12 @@ export async function searchWiki(
       sourceType,
       title: page.title,
       url,
-      license: host === 'en.wikisource.org' ? 'Public domain (Wikisource)' : 'CC BY-SA 4.0',
+      license:
+        host === 'en.wikisource.org'
+          ? 'Public domain (Wikisource)'
+          : host === 'en.wikinews.org'
+            ? 'CC BY 2.5 (Wikinews)'
+            : 'CC BY-SA 4.0',
     };
     // Collect candidates across the WHOLE document, then take a spread:
     // lead/overview material AND mid-document mechanics AND late sections

@@ -24,12 +24,14 @@ export const TYPE_DESC: Record<SourceType, string> = {
   video: 'lectures and talks, at the relevant moment',
 };
 
-// Branch-out reach as five named stops along the continuous 0..1 radius the
-// engine actually reads. The radius is what the study map and loom consume
-// (prompts.ts: KIND_BUDGET gates which branch kinds are in play, branchBudget
-// gates how many) -- these stops are just how a learner picks it. Ordered
-// narrow -> wide: Focused stays on the spine of the idea; Far-reaching opens
-// the whole iceberg, out to the frontier and neighboring fields.
+// Reach is the two-sides-of-mastery spectrum the learner sets, read by the
+// engine as a continuous 0..1 radius (prompts.ts: KIND_BUDGET gates which
+// branch kinds are in play, branchBudget how many; expand.ts ties crawl depth
+// to it). The two ends are the two ways to master something: DEEP DIVE (low)
+// drills the core -- what the idea is built from, read in depth, the source
+// allowed to fully talk; FRONTIER (high) opens the most knowledgeable edge --
+// every angle, debate, and neighboring field, an endless widening feed.
+// BALANCED is the 50/50 between them.
 
 export interface ReachLevel {
   key: string;
@@ -42,34 +44,34 @@ export interface ReachLevel {
 
 export const REACH_LEVELS: ReachLevel[] = [
   {
-    key: 'focused',
-    label: 'Focused',
-    radius: 0.15,
-    blurb: 'The spine only — what the idea assumes and how it works.',
+    key: 'deep',
+    label: 'Deep dive',
+    radius: 0.12,
+    blurb: 'Drill the core — what the idea is built from, read in depth.',
   },
   {
-    key: 'depth',
-    label: 'Depth',
-    radius: 0.35,
-    blurb: 'Dig inward — the parts the idea is built from.',
+    key: 'inward',
+    label: 'Leaning deep',
+    radius: 0.32,
+    blurb: 'Mostly inward — its mechanisms and first principles.',
   },
   {
     key: 'balanced',
     label: 'Balanced',
-    radius: 0.55,
-    blurb: 'Where it bites in practice, and where it came from.',
+    radius: 0.5,
+    blurb: 'Half its inner workings, half its wider world — 50/50.',
   },
   {
-    key: 'exploratory',
-    label: 'Exploratory',
-    radius: 0.8,
-    blurb: 'Out to the live debates experts still argue.',
+    key: 'outward',
+    label: 'Leaning frontier',
+    radius: 0.72,
+    blurb: 'Mostly outward — where it is applied and what is argued.',
   },
   {
-    key: 'far',
-    label: 'Far-reaching',
+    key: 'frontier',
+    label: 'Frontier',
     radius: 0.95,
-    blurb: 'The whole field — the frontier and what sits beside it.',
+    blurb: 'The open edge — every angle and neighboring field, an endless feed.',
   },
 ];
 

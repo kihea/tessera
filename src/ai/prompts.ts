@@ -9,8 +9,20 @@
 // gathering REAL sources for -- never to write content itself.
 
 import type { BranchKind } from '../types';
+import type { QueryType } from '../research/classify';
 
-export const STUDY_MAP_SYSTEM = `You are the connection engine inside Tessera, a learning app whose feed shows ONLY verbatim excerpts from real sources. You never write content for the learner and you never summarize sources. Your single job: given a main idea and a sample of what real sources say about it, decide which neighboring concepts the learner needs REAL material on, so the sources -- not you -- can carry the understanding.
+/** Type-specific gathering guidance folded into the study-map prompt. */
+const TYPE_GUIDANCE: Record<QueryType, string> = {
+  person:
+    'This MAIN IDEA is a PERSON. Gather threads that let real sources speak about them across their life and across eras: their formative background and influences, what they actually did or made, how contemporaries reported on them, and how later assessments and critics differ. Prefer branches that surface DIFFERENT periods and DIFFERENT angles, not one flattering summary.',
+  event:
+    'This MAIN IDEA is an EVENT. Gather ALL ANGLES: the causes and lead-up, the perspectives of the different sides/participants, the immediate aftermath and longer consequences, and the competing later interpretations (historiography). No single side should dominate the map.',
+  philosophy:
+    'This MAIN IDEA is a PHILOSOPHY / ideology. Gather its core tenets and origins, BUT ALSO its rivals and critics: opposing schools, the strongest arguments against it, and where it is contested — so the learner meets the full debate, with sources laying out each side in their own words.',
+  topic: '',
+};
+
+export const STUDY_MAP_SYSTEM = `You are the connection engine inside A.woke, a learning app whose feed shows ONLY verbatim excerpts from real sources. You never write content for the learner and you never summarize sources. Your single job: given a main idea and a sample of what real sources say about it, decide which neighboring concepts the learner needs REAL material on, so the sources -- not you -- can carry the understanding.
 
 Ground your choices in how durable learning works (the iceberg of mastery):
 - surface familiarity with a term is not understanding;
@@ -35,14 +47,17 @@ Rules:
 - "why" must state the RELATION to the main idea ("the math that makes X possible", "what X was invented to replace"), never teach the content itself.`;
 
 const KIND_BUDGET: { ceiling: number; kinds: BranchKind[] }[] = [
-  // The reach weight gates how far from the trunk the engine may wander, as
-  // five stops (see ui/labels.ts REACH_LEVELS): close stays on the spine of
-  // the idea; far opens the full iceberg out to debate and neighboring fields.
-  { ceiling: 0.25, kinds: ['prerequisite', 'mechanism'] }, // Focused
-  { ceiling: 0.45, kinds: ['prerequisite', 'mechanism', 'component'] }, // Depth
+  // Reach gates how far from the trunk the engine wanders, as five stops (see
+  // ui/labels.ts REACH_LEVELS) on the deep-dive -> frontier spectrum: DEEP DIVE
+  // stays on the spine and what it is built from (the inward, foundational
+  // knowledge); FRONTIER opens the full iceberg out to debate and neighboring
+  // fields (the outward angles). Foundation rides low -- first principles are
+  // depth, not distance.
+  { ceiling: 0.25, kinds: ['prerequisite', 'mechanism', 'component', 'foundation'] }, // Deep dive
+  { ceiling: 0.45, kinds: ['prerequisite', 'mechanism', 'component', 'foundation'] }, // Leaning deep
   { ceiling: 0.65, kinds: ['context', 'prerequisite', 'mechanism', 'component', 'application', 'foundation'] }, // Balanced
-  { ceiling: 0.85, kinds: ['context', 'prerequisite', 'mechanism', 'component', 'application', 'foundation', 'frontier'] }, // Exploratory
-  { ceiling: 1.01, kinds: ['context', 'prerequisite', 'mechanism', 'component', 'application', 'foundation', 'frontier', 'adjacent'] }, // Far-reaching
+  { ceiling: 0.85, kinds: ['context', 'prerequisite', 'mechanism', 'component', 'application', 'foundation', 'frontier'] }, // Leaning frontier
+  { ceiling: 1.01, kinds: ['context', 'prerequisite', 'mechanism', 'component', 'application', 'foundation', 'frontier', 'adjacent'] }, // Frontier
 ];
 
 export function allowedKinds(radius: number): BranchKind[] {
@@ -73,14 +88,17 @@ export function studyMapUser(
   radius: number,
   seedConcepts: string[],
   seedExcerpts: { title: string; text: string }[],
+  qType: QueryType = 'topic',
 ): string {
   const kinds = allowedKinds(radius).join(', ');
   const excerpts = seedExcerpts
     .map((e) => `--- from "${e.title}":\n${e.text}`)
     .join('\n\n');
+  const typeLine = TYPE_GUIDANCE[qType] ? `\n${TYPE_GUIDANCE[qType]}\n` : '';
   return `MAIN IDEA: ${query}
+${typeLine}
 
-REACH (0 = stay tight on what the idea presupposes and contains; 1 = stretch to history, debates, neighboring fields): ${radius.toFixed(2)}
+REACH (0 = DEEP DIVE: stay tight on what the idea presupposes and is built from, gathered in depth; 1 = FRONTIER: stretch out to every angle, debate, and neighboring field): ${radius.toFixed(2)}
 Allowed branch kinds at this reach: ${kinds}
 Number of branches: at most ${branchBudget(radius)} -- fewer if the material doesn't demand more.
 ${

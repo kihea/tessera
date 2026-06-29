@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Tessera",
+  "productName": "A.woke",
   "version": "0.1.0",
   "identifier": "app.tessera.desktop",
   "build": {
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "Tessera — learn from the sources themselves",
+        "title": "A.woke — learn from the sources themselves",
         "width": 1440,
         "height": 920,
         "minWidth": 980,

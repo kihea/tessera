@@ -12,7 +12,7 @@ interface Props {
 
 export function FeedPane({ session, registerEl, onJump }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const { cards, completedGates, onCardVisible, onCardHidden } = session;
+  const { cards, completedGates, loadingMore, onCardVisible, onCardHidden } = session;
 
   // Reveal cards only up to (and including) the first uncleared gate. Anything
   // after a locked checkpoint / check stays hidden until it is answered.
@@ -79,6 +79,12 @@ export function FeedPane({ session, registerEl, onJump }: Props) {
           {lockedBy.kind === 'checkpoint'
             ? 'Locked — write your connection above to keep going.'
             : 'Locked — answer the check above to keep going.'}
+        </div>
+      )}
+      {loadingMore && !lockedBy && (
+        <div className="loading-more" aria-live="polite">
+          <span className="spinner" />
+          Gathering more perspectives…
         </div>
       )}
     </div>

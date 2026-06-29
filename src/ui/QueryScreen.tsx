@@ -16,9 +16,11 @@ const EXAMPLES = [
 export function QueryScreen({
   onSubmit,
   onSettings,
+  onOpenGraph,
 }: {
   onSubmit: (query: string) => void;
   onSettings: () => void;
+  onOpenGraph: () => void;
 }) {
   const [value, setValue] = useState('');
   const [recents, setRecents] = useState(() => loadTopics());
@@ -45,14 +47,21 @@ export function QueryScreen({
       >
         ⚙ Settings
       </button>
+      <button
+        className="graph-link"
+        onClick={onOpenGraph}
+        title="Your knowledge graph — everything you've researched, connected"
+      >
+        ◍ Knowledge graph
+      </button>
 
       <div className="composer">
         <div className="brand">
-          <span className="brand-mark">◳</span> Tessera
+          <span className="brand-mark">◳</span> A.woke
         </div>
         <h1 className="composer-title">Learn from the sources themselves.</h1>
         <p className="composer-sub">
-          Name a topic. Tessera gathers real material &mdash; encyclopedias, textbooks, papers,
+          Name a topic. A.woke gathers real material &mdash; encyclopedias, textbooks, papers,
           books &mdash; and weaves the <em>verbatim</em> excerpts into a feed. You read the sources;
           you write the synthesis.
         </p>

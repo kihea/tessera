@@ -138,6 +138,59 @@ async fn llm_complete(req: LlmReq) -> Result<String, String> {
     }
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EmbedReq {
+    provider: String,
+    base_url: Option<String>,
+    api_key: Option<String>,
+    model: String,
+    input: Vec<String>,
+}
+
+/// Embed a batch of texts via the configured backend (Ollama or any OpenAI-
+/// compatible server). Returns one vector per input. Optional graph enhancement;
+/// any failure surfaces as an error the TS side treats as "no embeddings".
+#[tauri::command]
+async fn llm_embed(req: EmbedReq) -> Result<Vec<Vec<f32>>, String> {
+    let http = client()?;
+    let to_vecs = |rows: &[Value], pick: &dyn Fn(&Value) -> &Value| -> Vec<Vec<f32>> {
+        rows.iter()
+            .map(|r| {
+                pick(r)
+                    .as_array()
+                    .map(|v| v.iter().filter_map(|x| x.as_f64().map(|f| f as f32)).collect())
+                    .unwrap_or_default()
+            })
+            .collect()
+    };
+    match req.provider.as_str() {
+        "ollama" => {
+            let base = trim_base(&req.base_url, "http://localhost:11434");
+            let data = post_json(
+                http.post(format!("{base}/api/embed")),
+                json!({ "model": req.model, "input": req.input }),
+            )
+            .await?;
+            let rows = data["embeddings"]
+                .as_array()
+                .ok_or("no embeddings in ollama response")?;
+            Ok(to_vecs(rows, &|r| r))
+        }
+        // OpenAI-compatible (api.openai.com, LM Studio, llama.cpp, vLLM, ...)
+        _ => {
+            let base = trim_base(&req.base_url, "https://api.openai.com/v1");
+            let mut builder = http.post(format!("{base}/embeddings"));
+            if let Some(key) = req.api_key.as_deref().filter(|k| !k.trim().is_empty()) {
+                builder = builder.header("authorization", format!("Bearer {key}"));
+            }
+            let data = post_json(builder, json!({ "model": req.model, "input": req.input })).await?;
+            let rows = data["data"].as_array().ok_or("no data in embeddings response")?;
+            Ok(to_vecs(rows, &|r| &r["embedding"]))
+        }
+    }
+}
+
 /// The locally installed Ollama models, for the settings screen.
 #[tauri::command]
 async fn list_ollama_models(base_url: Option<String>) -> Result<Vec<String>, String> {
@@ -267,6 +320,82 @@ async fn yt_transcript(video_id: String) -> Result<Vec<Value>, String> {
     Ok(out)
 }
 
+// -- Google Scholar source feed (desktop only) -------------------------------
+// Scholar has no official API and blocks direct browser access, so the request
+// goes out from here via SerpApi's google_scholar engine, with a SerpApi key
+// the user supplies. The TS side owns relevance, snippet trimming, and card
+// shaping; this just fetches and hands back a thin slice. Best-effort: any
+// failure returns empty and the caller skips the feed.
+#[tauri::command]
+async fn scholar_search(
+    query: String,
+    api_key: String,
+    max: Option<u32>,
+) -> Result<Vec<Value>, String> {
+    let http = client()?;
+    let n = max.unwrap_or(6).min(20).to_string();
+    let res = http
+        .get("https://serpapi.com/search.json")
+        .query(&[
+            ("engine", "google_scholar"),
+            ("q", query.as_str()),
+            ("num", n.as_str()),
+            ("api_key", api_key.as_str()),
+        ])
+        .timeout(Duration::from_secs(15))
+        .send()
+        .await
+        .map_err(|e| format!("scholar search failed: {e}"))?;
+    let status = res.status();
+    let text = res.text().await.map_err(|e| e.to_string())?;
+    if !status.is_success() {
+        return Err(format!(
+            "scholar search {status}: {}",
+            text.chars().take(200).collect::<String>()
+        ));
+    }
+    let data: Value =
+        serde_json::from_str(&text).map_err(|e| format!("bad json from serpapi: {e}"))?;
+    let out = data["organic_results"]
+        .as_array()
+        .map(Vec::as_slice)
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|it| {
+            let link = it["link"].as_str()?;
+            Some(json!({
+                "title": it["title"].as_str().unwrap_or_default(),
+                "link": link,
+                "snippet": it["snippet"].as_str().unwrap_or_default(),
+                "summary": it["publication_info"]["summary"].as_str().unwrap_or_default(),
+                "citedBy": it["inline_links"]["cited_by"]["total"].as_u64().unwrap_or(0),
+            }))
+        })
+        .collect::<Vec<_>>();
+    Ok(out)
+}
+
+/// Generic best-effort GET that returns the raw body text. Lets keyed web
+/// providers whose APIs don't send CORS headers (The Guardian, GNews, …) work
+/// on the desktop app, where there is no browser same-origin policy. The TS
+/// side owns the URL (key included) and the JSON parsing.
+#[tauri::command]
+async fn http_get(url: String, timeout_ms: Option<u64>) -> Result<String, String> {
+    let http = client()?;
+    let res = http
+        .get(&url)
+        .timeout(Duration::from_millis(timeout_ms.unwrap_or(12000)))
+        .send()
+        .await
+        .map_err(|e| format!("request failed: {e}"))?;
+    let status = res.status();
+    let text = res.text().await.map_err(|e| e.to_string())?;
+    if !status.is_success() {
+        return Err(format!("{status}: {}", text.chars().take(160).collect::<String>()));
+    }
+    Ok(text)
+}
+
 /// Pull the first caption track's baseUrl out of a watch page's player response.
 fn extract_caption_base_url(page: &str) -> Option<String> {
     let anchor = page.find("\"captionTracks\":")?;
@@ -284,9 +413,12 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             llm_complete,
+            llm_embed,
             list_ollama_models,
             yt_search,
-            yt_transcript
+            yt_transcript,
+            scholar_search,
+            http_get
         ])
         .run(tauri::generate_context!())
         .expect("error while running tessera");

@@ -15,6 +15,12 @@ import { aiConfigured, complete, extractJson } from '../ai/llm';
 import type { WebllmProgress } from '../ai/webllm';
 import { searchOpenAlex } from './openalex';
 import { searchWiki } from './wiki';
+import { searchChronicling } from './chronicling';
+import { searchArchive } from './archive';
+import { searchHN } from './hn';
+import { searchGuardian } from './guardian';
+import { searchNYT } from './nyt';
+import type { QueryType } from './classify';
 import { nearDuplicate, wordSet } from './providers';
 
 type ProgressFn = (update: ProviderProgress) => void;
@@ -85,7 +91,44 @@ function sanitizeModelMap(raw: RawMap | null, query: string, radius: number): St
  * not vocabulary), plus two synthetic rungs of the iceberg that almost every
  * topic has a real article for: its history, and its debates.
  */
-function heuristicStudyMap(query: string, seedConcepts: Concept[], radius: number): StudyMap {
+/**
+ * Type-specific threads for a person / event / philosophy: the angles the
+ * learner's request is really asking for. Each is reach-gated by its kind like
+ * any other branch, and leads the queue ahead of generic concept branches.
+ */
+function typeBranchSpecs(query: string, qType: QueryType): StudyBranch[] {
+  switch (qType) {
+    case 'person':
+      return [
+        { kind: 'context', concept: 'early life & formation', query: `${query} early life`, why: `Where ${query} came from — the background that shaped them.` },
+        { kind: 'application', concept: 'what they did', query: `${query} career achievements`, why: `The work and acts ${query} is actually known for.` },
+        { kind: 'frontier', concept: 'reception & criticism', query: `${query} criticism controversy`, why: `How contemporaries and later critics judged ${query} — the contested views.` },
+        { kind: 'frontier', concept: 'legacy & differing assessments', query: `${query} legacy influence`, why: `What ${query} left behind, and where assessments diverge.` },
+      ];
+    case 'event':
+      return [
+        { kind: 'context', concept: 'causes & lead-up', query: `causes of ${query}`, why: `What set the stage for ${query}.` },
+        { kind: 'application', concept: 'aftermath & consequences', query: `${query} aftermath consequences`, why: `What ${query} changed, and what followed.` },
+        { kind: 'frontier', concept: 'competing interpretations', query: `${query} historiography interpretations`, why: `How historians and the different sides read ${query} differently.` },
+      ];
+    case 'philosophy':
+      return [
+        { kind: 'prerequisite', concept: 'core tenets', query: `${query} key concepts principles`, why: `The central claims ${query} rests on.` },
+        { kind: 'foundation', concept: 'origins', query: `origins of ${query}`, why: `Where ${query} came from and what it answered.` },
+        { kind: 'frontier', concept: 'criticisms', query: `criticism of ${query}`, why: `The strongest arguments against ${query}.` },
+        { kind: 'frontier', concept: 'rival schools', query: `alternatives to ${query}`, why: `The opposing positions ${query} contends with.` },
+      ];
+    default:
+      return [];
+  }
+}
+
+function heuristicStudyMap(
+  query: string,
+  seedConcepts: Concept[],
+  radius: number,
+  qType: QueryType = 'topic',
+): StudyMap {
   const budget = branchBudget(radius);
   const kinds = new Set(allowedKinds(radius));
   const queryWords = new Set(query.toLowerCase().split(/\s+/));
@@ -109,7 +152,9 @@ function heuristicStudyMap(query: string, seedConcepts: Concept[], radius: numbe
       });
     }
   }
-  if (kinds.has('foundation')) {
+  // Generic history/debate rungs for a plain topic; a person/event/philosophy
+  // gets sharper, type-specific threads instead (below).
+  if (qType === 'topic' && kinds.has('foundation')) {
     branches.push({
       kind: 'foundation',
       concept: `history of the idea`,
@@ -117,13 +162,22 @@ function heuristicStudyMap(query: string, seedConcepts: Concept[], radius: numbe
       why: `Where “${query}” came from — the problems it was invented to solve.`,
     });
   }
-  if (kinds.has('frontier')) {
+  if (qType === 'topic' && kinds.has('frontier')) {
     branches.push({
       kind: 'frontier',
       concept: 'debates and criticism',
       query: `${query} criticism controversy`,
       why: `What experts argue about — the live edges of “${query}”.`,
     });
+  }
+
+  // Type-specific threads (person/event/philosophy) lead the queue ahead of
+  // generic concept branches, each still gated by reach via its kind.
+  for (const b of typeBranchSpecs(query, qType)) {
+    if (branches.length >= budget) break;
+    if (!kinds.has(b.kind)) continue;
+    if (branches.some((x) => x.query.toLowerCase() === b.query.toLowerCase())) continue;
+    branches.push(b);
   }
 
   // Concept branches: prefer specific multi-word terms and acronyms -- they
@@ -149,6 +203,101 @@ function heuristicStudyMap(query: string, seedConcepts: Concept[], radius: numbe
   return { idea: query, branches: branches.slice(0, budget), builtBy: 'heuristic' };
 }
 
+// -- endless frontier: each wave a fresh set of angles ------------------------
+// At high reach the feed should never run dry. Each expansion wave gathers a
+// NEW set of perspectives: rotating angle queries (different every wave) plus
+// whatever concepts the weave itself has surfaced and not yet branched on. The
+// near-duplicate merge (mergeResearch) discards anything already seen, so a
+// wave that returns nothing new is the signal that the topic is truly mined out.
+
+/** Rotating angle queries by type -- the perpetual-novelty bank. */
+function angleTemplates(query: string, qType: QueryType): { kind: StudyBranch['kind']; concept: string; query: string }[] {
+  switch (qType) {
+    case 'person':
+      return [
+        { kind: 'frontier', concept: 'how contemporaries reacted', query: `reactions to ${query}` },
+        { kind: 'application', concept: 'in popular culture', query: `${query} in popular culture` },
+        { kind: 'context', concept: 'the world they lived in', query: `${query} era historical context` },
+        { kind: 'frontier', concept: 'later years', query: `${query} later life death` },
+        { kind: 'frontier', concept: 'how historians judge them', query: `historians on ${query}` },
+        { kind: 'adjacent', concept: 'their circle', query: `${query} contemporaries associates` },
+      ];
+    case 'event':
+      return [
+        { kind: 'frontier', concept: 'eyewitness accounts', query: `${query} eyewitness accounts` },
+        { kind: 'adjacent', concept: 'reaction abroad', query: `${query} international reaction` },
+        { kind: 'application', concept: 'long-term effects', query: `${query} long-term consequences` },
+        { kind: 'frontier', concept: 'myths and misconceptions', query: `${query} myths misconceptions` },
+        { kind: 'foundation', concept: 'the wider conditions', query: `${query} underlying conditions` },
+      ];
+    case 'philosophy':
+      return [
+        { kind: 'application', concept: 'put into practice', query: `${query} in practice examples` },
+        { kind: 'frontier', concept: 'its defenders', query: `defenses of ${query}` },
+        { kind: 'frontier', concept: 'modern debates', query: `${query} contemporary debate` },
+        { kind: 'foundation', concept: 'its key thinkers', query: `${query} key thinkers` },
+        { kind: 'adjacent', concept: 'neighboring schools', query: `schools related to ${query}` },
+      ];
+    default:
+      return [
+        { kind: 'application', concept: 'where it shows up', query: `applications of ${query}` },
+        { kind: 'frontier', concept: 'recent developments', query: `${query} recent developments` },
+        { kind: 'frontier', concept: 'common misconceptions', query: `${query} misconceptions` },
+        { kind: 'adjacent', concept: 'neighboring fields', query: `fields related to ${query}` },
+        { kind: 'context', concept: 'how it came about', query: `${query} origins development` },
+      ];
+  }
+}
+
+/**
+ * The next wave's study map: rotating angle queries (a different slice each
+ * wave) plus emergent concepts the weave has surfaced, all reach-gated and
+ * skipping anything already researched.
+ */
+export function buildExpansionMap(
+  query: string,
+  corpusConcepts: Concept[],
+  qType: QueryType,
+  radius: number,
+  used: Set<string>,
+  wave: number,
+): StudyMap {
+  const kinds = new Set(allowedKinds(radius));
+  const budget = branchBudget(radius);
+  const queryWords = new Set(query.toLowerCase().split(/\s+/));
+  const branches: StudyBranch[] = [];
+
+  // A rotating window over the angle bank so each wave opens different ground.
+  const bank = angleTemplates(query, qType);
+  for (let i = 0; i < bank.length; i++) {
+    const t = bank[(wave + i) % bank.length];
+    if (branches.length >= Math.ceil(budget / 2)) break;
+    if (!kinds.has(t.kind) || used.has(t.query.toLowerCase())) continue;
+    branches.push({ ...t, why: `Another angle on “${query}” — ${t.concept}.` });
+  }
+
+  // Emergent concepts: terms the weave keeps surfacing that have not yet been
+  // branched on get their own real material now.
+  const branchScore = (c: Concept) =>
+    c.weight * c.df * (c.id.includes(' ') || c.label === c.label.toUpperCase() ? 2.4 : 1);
+  const emergent = corpusConcepts
+    .filter((c) => c.important && !used.has(c.label.toLowerCase()))
+    .filter((c) => !c.id.split(' ').some((w) => queryWords.has(w)))
+    .filter((c) => c.id.includes(' ') || c.label === c.label.toUpperCase() || c.id.length >= 5)
+    .sort((a, b) => branchScore(b) - branchScore(a));
+  for (const c of emergent) {
+    if (branches.length >= budget) break;
+    branches.push({
+      kind: 'component',
+      concept: c.label,
+      query: c.label,
+      why: `“${c.label}” keeps surfacing as you read — gathering material that explains it in its own right.`,
+    });
+  }
+
+  return { idea: query, branches, builtBy: 'heuristic' };
+}
+
 /**
  * Build the study map: the configured model reads the seed material and
  * names the branches; any failure (no model, bad JSON, timeout) falls back
@@ -160,6 +309,7 @@ export async function buildStudyMap(
   seedDocs: Map<string, SourceDoc>,
   seedConcepts: Concept[],
   radius: number,
+  qType: QueryType = 'topic',
   onModelProgress?: (p: WebllmProgress) => void,
 ): Promise<StudyMap> {
   if (aiConfigured()) {
@@ -171,7 +321,7 @@ export async function buildStudyMap(
       .filter((c) => c.important)
       .slice(0, 24)
       .map((c) => c.label);
-    const reply = await complete(STUDY_MAP_SYSTEM, studyMapUser(query, radius, conceptLabels, leads), {
+    const reply = await complete(STUDY_MAP_SYSTEM, studyMapUser(query, radius, conceptLabels, leads, qType), {
       maxTokens: 1200,
       onProgress: onModelProgress,
     });
@@ -180,7 +330,7 @@ export async function buildStudyMap(
       if (map) return map;
     }
   }
-  return heuristicStudyMap(query, seedConcepts, radius);
+  return heuristicStudyMap(query, seedConcepts, radius, qType);
 }
 
 // -- researching the branches -------------------------------------------------
@@ -194,24 +344,73 @@ export async function researchBranches(
   map: StudyMap,
   radius: number,
   onProgress: ProgressFn,
+  qType: QueryType = 'topic',
 ): Promise<BranchResearch> {
   const deepKinds = new Set(['context', 'mechanism', 'frontier', 'foundation']);
+  // Outward-facing branch kinds where extra perspectives genuinely add angles
+  // (a mechanism branch wants the textbook, not period newspapers).
+  const angleKinds = new Set(['context', 'application', 'foundation', 'frontier', 'adjacent']);
+  // Crawl depth tracks reach (the same dial that decides "branch out"). DEEP
+  // DIVE reads each branch source far further -- more of its pages and more
+  // passages from each, plus papers for the inward kinds -- so a few threads
+  // are mastered in depth. FRONTIER spreads thinner across many branches but
+  // pulls papers widely, for angles rather than depth.
+  const deepDive = radius < 0.4;
+  const branchPages = deepDive ? 2 : 1;
+  const branchPassages = deepDive ? 9 : 5;
+  const paperCount = deepDive ? 2 : 1;
   const results = await Promise.all(
     map.branches.map(async (branch): Promise<BranchResearch> => {
       const name = `↳ ${branch.concept}`;
       onProgress({ name, status: 'pending', passages: 0 });
       try {
-        const [wiki, papers] = await Promise.all([
-          searchWiki(branch.query, 'en.wikipedia.org', 'encyclopedia', 'Wikipedia', 1, 5),
-          deepKinds.has(branch.kind) && radius >= 0.34
-            ? searchOpenAlex(branch.query, 1)
-            : Promise.resolve({ docs: [], passages: [] }),
+        // Pull papers for the inward/foundational kinds when diving deep, and
+        // broadly once reach climbs (frontier wants every scholarly angle).
+        const wantPapers = (deepKinds.has(branch.kind) && radius >= 0.34) || radius >= 0.6;
+        const empty = Promise.resolve({ docs: [] as SourceDoc[], passages: [] as Passage[] });
+        // Entity-aware angles, gated by reach so deep dives stay tight. A PERSON
+        // or EVENT branch pulls reporting across eras -- Wikinews and Chronicling
+        // America (keyless), plus The Guardian and NYT when keys are set -- for
+        // "the story across time", plus modern DISCUSSION (Hacker News) as its
+        // own distinct angle, never a stand-in for news. A PHILOSOPHY branch
+        // pulls long-form / primary text (Internet Archive) so a rival or critic
+        // gets to talk at length. (Keyed providers no-op without a key.)
+        const angle = angleKinds.has(branch.kind) && radius >= 0.5;
+        const wantNews = angle && (qType === 'person' || qType === 'event');
+        const wantArchive = angle && (qType === 'philosophy' || qType === 'event');
+        const [wiki, papers, histNews, modNews, guardian, nyt, talk, archive] = await Promise.all([
+          searchWiki(branch.query, 'en.wikipedia.org', 'encyclopedia', 'Wikipedia', branchPages, branchPassages),
+          wantPapers ? searchOpenAlex(branch.query, paperCount) : empty,
+          wantNews ? searchChronicling(branch.query, 2) : empty,
+          wantNews ? searchWiki(branch.query, 'en.wikinews.org', 'news', 'Wikinews', 2, 3) : empty,
+          wantNews ? searchGuardian(branch.query, 4) : empty,
+          wantNews ? searchNYT(branch.query) : empty,
+          wantNews ? searchHN(branch.query, 3) : empty,
+          wantArchive ? searchArchive(branch.query, 1, 3) : empty,
         ]);
-        const docs = [...wiki.docs, ...papers.docs];
+        const docs = [
+          ...wiki.docs,
+          ...papers.docs,
+          ...histNews.docs,
+          ...modNews.docs,
+          ...guardian.docs,
+          ...nyt.docs,
+          ...talk.docs,
+          ...archive.docs,
+        ];
         for (const doc of docs) {
           doc.branch = { kind: branch.kind, concept: branch.concept, why: branch.why };
         }
-        const passages = [...wiki.passages, ...papers.passages];
+        const passages = [
+          ...wiki.passages,
+          ...papers.passages,
+          ...histNews.passages,
+          ...modNews.passages,
+          ...guardian.passages,
+          ...nyt.passages,
+          ...talk.passages,
+          ...archive.passages,
+        ];
         onProgress({ name, status: 'ok', passages: passages.length });
         return { docs, passages };
       } catch {
